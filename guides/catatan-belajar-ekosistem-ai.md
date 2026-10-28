@@ -7,6 +7,7 @@
 > **Pembaruan terbaru:** Bagian 3.6 dan 3.7 (API Gateway dan Code Mate di Cherry Studio), 4.2 (**diluruskan**: pencarian web Cherry Studio), 4.4 (penyedia pengambil URL), 9.11 (vibe coding di VS Code lewat Cherry Studio), dan 11.3 (susunan rantai yang diluruskan).
 > **Pembaruan ketiga:** Bagian 2.9 sampai 2.12 (Claude Console, model lokal, Unsloth Studio, Colab dan Kaggle), 3.8 dan 3.9 (Knowledge Base dan Channels di Cherry Studio; **koreksi**: Cherry Studio punya fitur Channels untuk Telegram), 5.6 (memory layer/Obsidian), 7.4 sampai 7.6 (Telegram diluruskan, Claude API di bot, batasan WhatsApp), 9.12 sampai 9.18 (Codex, GitHub Copilot, OpenCode, pesaing, herdr, orkestrasi agen), 10.10 dan 10.11 (keluarga Copilot, skill di claude.ai vs plugin lokal), dan 11.4 (matriks produk vs lapisan).
 > **Pembaruan keempat:** Bagian 2.13 (waspada layanan API murah: model masking dan kecurangan reseller) dan 6.7 (freellmapi: router gratis lintas penyedia, perbandingan dengan OpenRouter, dan cara memakainya), plus baris baru di matriks 11.4, keamanan, glosarium, daftar belum terverifikasi, tanya-jawab, dan sumber.
+> **Pembaruan kelima:** Bagian 5.7 sampai 5.10 (oh-my-hermes dan alternatifnya, OpenBot, Hermes di VPS dengan PC sebagai "tangan", Tailscale dan SSH) dan 6.8 (fallback di dalam agen vs di gateway), plus baris baru di matriks 11.4, keamanan, glosarium, daftar belum terverifikasi, tanya-jawab, dan sumber.
 
 ---
 
@@ -815,6 +816,202 @@ Keduanya bisa dipakai bersamaan (lihat 10.11 untuk detail claude-mem).
 - Plugin REST API dan server MCP komunitas membuka akses lokal ke vault: pasang hanya yang dipercaya.
 - Untuk bot Telegram sendiri, ide serupa bisa dibuat sederhana: satu file Markdown preferensi dan ringkasan per pengguna yang disisipkan ke pesan sistem.
 
+### 5.7 oh-my-hermes (OMH): lapisan operasi untuk Hermes Agent
+
+**Apa itu:** proyek (github.com/rlaope/oh-my-hermes, MIT; sekitar 4,3 ribu bintang dan 327 fork saat dicek) yang berfungsi sebagai **lapisan operasi (operating layer) di atas Hermes Agent**. Kamu tetap berbicara dengan Hermes; OMH memilih skill dan model untuk tiap "lane" dan menjalankan pekerjaan secara paralel. Menurut README, ia tidak menambal atau menggantikan Hermes dan tidak pernah melaporkan pekerjaan yang baru direncanakan sebagai selesai. Analogi: Hermes = karyawan serba bisa; OMH = manajer proyek dan koordinator tim spesialis. README menyebut proyek ini dibangun bersama agen AI.
+
+**Fungsi:**
+- **Model berbeda untuk tiap lane.** Tiap lane diberi kategori kerja (`ultrabrain`, `deep`, `visual-engineering`, `quick`, dan lain-lain) yang menentukan rantai model dan tingkat penalaran. Bila penyedia menolak sebuah model, rantai pindah ke model berikutnya (bukan menurunkan kualitas diam-diam).
+- **`/dag-ulw` (graph run):** tujuan diubah menjadi graf node kecil; node yang siap berjalan paralel tanpa berbagi area tulis; node terpisah memeriksa tujuan; node gagal diperbaiki sebelum laporan.
+- **100+ skill spesialis `omh-*`** (frontend, backend, Rust, tinjauan keamanan, gerbang verifikasi) yang dimuat otomatis oleh router.
+- **Alur kerja `ulw-*`:** interview, research, plan, work, loop, qa, perf, dan `ulw-maestro` untuk menugaskan pekerjaan ke Claude Code atau Codex.
+- **Memori jangka panjang berbasis file** (penulisan ditinjau dulu; memori bawaan Hermes tidak dibaca atau diubah).
+- **Bukti sebelum "selesai":** status seperti `Plan · not run`, `Code · reported done`, `Test · verified` (verified hanya bila tes, review, atau CI lolos).
+- **TUI sendiri (`omh`)** dengan tampilan lane, model, effort, token, dan biaya.
+- Pemasangan lewat `curl … | sh` lalu `omh setup` (juga brew/npm/bun); butuh Hermes Agent terpasang. README juga memuat prompt siap-tempel untuk agen AI agar memasang proyek ini: jalankan hanya atas keputusanmu sendiri.
+
+**Posisi di diagram lapisan:** perpanjangan **lapisan 2** (harness orkestrasi di atas agen Hermes) dengan TUI sendiri di lapisan 1. Logika "pindah model bila ditolak" mirip lapisan 3, tetapi berjalan di dalam agen, bukan sebagai proxy jaringan. Ia tetap butuh penyedia di bawahnya.
+
+```
+LAPISAN 1  Antarmuka   OMH Native TUI (perintah `omh`) │ terminal Hermes │ gateway pesan Hermes
+              │
+LAPISAN 2  Agen        Hermes Agent  (loop + alat)
+              │         └─ oh-my-hermes = lapisan operasi di atas Hermes:
+              │              · router skill + kategori model per "lane"
+              │              · /dag-ulw: graf node paralel + node verifikasi terpisah
+              │              · 100+ skill omh-* · memori proyek · bukti sebelum "selesai"
+              │              · ulw-maestro: menugaskan Claude Code / Codex
+              │  tiap lane memilih model dari rantai kategorinya (pindah bila ditolak)
+LAPISAN 3  Gateway     (opsional) 9Router │ freellmapi │ OpenGateway │ langsung ke penyedia
+              │
+LAPISAN 4  Penyedia    Claude │ GPT │ DeepSeek │ GLM │ Kimi │ Gemini │ Qwen ...
+```
+
+```
+Tujuan ──→ /dag-ulw ──→ graf node kecil
+              ├─ node A [kategori: deep]    ─┐ berjalan paralel,
+              ├─ node B [kategori: quick]   ─┤ tiap node dengan model & effort
+              │                              │ kategorinya, tanpa berbagi area tulis
+              └─ node C (menunggu A dan B)  ─┘
+                         │
+                         ▼
+        node verifikasi terpisah ──→ perbaiki yang gagal ──→ laporan berlabel bukti
+```
+
+**Hubungan dengan yang lain:**
+- **Hermes Agent:** syarat mutlak. **Gateway dan penyedia:** untuk "model berbeda tiap lane" perlu akses ke beberapa penyedia (key sendiri atau lewat gateway). README menampilkan contoh lane di Claude, GPT, DeepSeek, GLM, dan Kimi (dari teks gambar, tidak diverifikasi) dan menyebut OpenGateway (gateway OpenAI-compatible dengan failover) sebagai sponsor.
+- **herdr:** berbeda (mengelola sesi terminal banyak agen); bisa dipakai bersamaan. **Memory layer:** OMH punya penyedia memori sendiri; bisa berdampingan dengan Obsidian (lihat 5.6).
+
+**Alternatif sejenis** (pola "oh-my-…" di atas agen coding tertentu):
+
+| Produk | Untuk agen | Catatan |
+|---|---|---|
+| **oh-my-claudecode (OMC)** | Claude Code | Menurut satu ulasan, tim 32 agen spesialis dalam tiga tingkat model (Opus, Sonnet, Haiku); mode Team, pipeline, autopilot, Ralph; worker tmux; plugin MIT; terikat Claude Code |
+| **oh-my-codex** | OpenAI Codex CLI | Saudara OMC untuk Codex |
+| **oh-my-openagent** | OpenCode | Disebut sebagai peningkat OpenCode (nama lama kemungkinan oh-my-opencode, dari pengetahuan saya) |
+| **TechDufus/oh-my-claude** | Claude Code | Prompt "ultrawork" ringan tanpa banyak agen |
+| **wshobson/agents** | Claude Code | Orkestrasi tim yang lebih minimalis |
+| **huangdijia/oh-my-claude-code-plugins** | Claude Code | Menambah agen dan integrasi MCP |
+| **LangGraph / AutoGen** | Kerangka umum | Rakit sendiri alur multi-agen (DIY) |
+
+**Catatan kritis:**
+- **Klaim belum terukur:** README sendiri menyatakan lane A/B Hermes saja vs Hermes + OMH sudah punya korpus dan pilot offline, tetapi belum ada hasil ukur yang dipublikasikan.
+- **Boros kuota:** banyak lane paralel di banyak model cepat menghabiskan kuota gratis dan memicu batas laju. Lebih cocok untuk proyek besar dengan banyak penyedia.
+- **Keamanan pemasangan:** `curl | sh` dan `omh setup` menyentuh konfigurasi Hermes; baca skripnya. Popularitas (bintang) bukan jaminan.
+- Mulai dari yang sederhana: bila belum memakai Hermes Agent, lapisan operasi seperti ini terlalu dini.
+
+### 5.8 OpenBot (openbot.run): tim agen di komputermu
+
+**Apa itu:** aplikasi desktop gratis (macOS 13+, Windows 10+, Linux AppImage; plus aplikasi iOS/Android yang terhubung ke komputermu) yang menjalankan **tim agen AI di komputer sendiri**. Tiap agen punya nama, instruksi, dan workspace; mereka saling kirim pesan, serah-terima tugas, dan berbagi file (seperti ruang kerja dengan channel, mis. `#launch`).
+
+**Fungsi:**
+- **Memakai paket langganan yang sudah dimiliki:** Codex (paket ChatGPT), Claude Code (paket Claude), Gemini (Google AI Pro/Ultra), Grok, OpenCode (model gratis tanpa akun), Cursor, Cline, Muse Code, Pi, Inception Mercury; agen apa pun berbasis Agent Client Protocol (ACP, mis. Goose, Qwen Code); endpoint OpenAI-compatible; Ollama dan LM Studio.
+- **Ganti penyedia, agen tetap sama:** workspace dan percakapan dipertahankan; bila kuota habis atau penyedia down, agen bisa pindah ke model cadangan di penyedia lain (dengan catatan di chat).
+- Browser bawaan yang bisa dikendalikan agen; antrean tugas; plugin dan marketplace (Notion, Figma, Canva, Linear, Obsidian, dan lain-lain).
+- **Data lokal:** workspace, percakapan, lampiran, dan data browser tersimpan di komputer; penyedia AI yang dipilih tetap menerima prompt.
+- **Biaya:** aplikasi $0; membayar penyedia lewat paket atau API key. Ada layanan berbayar untuk tim (server terkelola).
+
+**Posisi di diagram lapisan:** lapisan 1 + **koordinasi di atas agen-agen lapisan 2**. Ia memperlakukan agen yang ada (Codex, Claude Code, OpenCode, Cline, dan lain-lain) sebagai "pekerja" yang bisa ditukar, sehingga "provider" di OpenBot sering berarti agen, bukan hanya API model.
+
+```
+LAPISAN 1  Antarmuka   OpenBot (app desktop) │ app mobile (terhubung ke komputermu) │ browser bawaan
+              │
+              │  channel #launch: Ada ⇄ Linus ⇄ Grace (saling kirim pesan, serah-terima, berbagi file)
+LAPISAN 2  Agen        tim agen OpenBot, tiap agen memakai satu "provider":
+              │            Codex │ Claude Code │ Gemini │ Grok │ OpenCode │ Cursor │ Cline │ ...
+              │            (atau agen ACP seperti Goose, Qwen Code)
+              │  kuota habis / penyedia down → pindah ke model cadangan (di dalam aplikasi)
+LAPISAN 3  Gateway     (opsional) endpoint OpenAI-compatible: 9Router │ freellmapi │ Ollama/LM Studio
+              │
+LAPISAN 4  Penyedia    paket ChatGPT/Claude/Google AI Pro │ API key │ model lokal
+```
+
+Kira-kira gabungan herdr (mengelola banyak agen), oh-my-claudecode/oh-my-hermes (orkestrasi tim), dan aplikasi grafis, tetapi tidak terikat satu agen. Fallback ke model cadangan mirip lapisan 3, tetapi berjalan di dalam aplikasi.
+
+**Perbandingan:**
+
+| Produk | Jenis | Tempat berjalan | Model dan biaya | Catatan |
+|---|---|---|---|---|
+| **OpenBot** | Aplikasi tim agen (GUI + mobile) | Komputermu | Paket langganan, API key, atau model lokal; aplikasi gratis | Lintas agen; preview; lisensi PolyForm Noncommercial |
+| **Hermes Agent** | Agen tunggal self-improving | Self-hosted (lokal/VPS), terminal + pesan | BYOK, MIT | Fokus belajar dari tugas berulang |
+| **OpenClaw** | Gateway ke aplikasi pesan + agen | Self-hosted | BYOK, MIT | Satu sumber menyebut aplikasi native macOS/iOS/Android + Web UI; riwayat masalah ClawHub |
+| **Eigent** | Tim agen di desktop | Lokal | Open source (menurut direktori) | Pasukan agen terspesialisasi paralel |
+| **Claude Cowork** | Agen desktop terkelola | Komputermu | Claude saja, paket berbayar | Satu vendor |
+| **Muse by Meta** | Agen pribadi terkelola | VM cloud Meta | Muse Spark | Tertutup |
+| **herdr + agen CLI** | Rakit sendiri | Komputermu | Model tiap agen | Pantau banyak agen di terminal |
+| **oh-my-claudecode** | Tim agen di dalam Claude Code | Komputermu | Claude saja | Terikat Claude Code |
+
+Halaman perbandingan OpenBot menyebut juga Grok Bot, ChatGPT dots, Manus, Devin, Paperclip, Viktor, dan Instinct (belum diperiksa; halamannya ditulis OpenBot sendiri, anggap pemasaran). Satu direktori menyebut OpenClaw sebagai alternatif sumber terbuka terbaik untuk OpenBot, lalu Hermes Agent, NanoClaw, Eigent, dan Rakazo.
+
+**Hal yang perlu diwaspadai:**
+- **Sangat baru dan "development preview"** (peluncuran diumumkan 14 September 2026). Situs menyatakan agen bisa membaca dan mengubah file, menjalankan perintah, memakai jaringan, dan mengendalikan browser **tanpa bertanya tiap kali**. Berikan hanya tugas yang dipercaya dan simpan cadangan.
+- **"Open source" yang perlu dibaca teliti:** kodenya publik tetapi lisensinya **PolyForm Noncommercial 1.0.0** (gratis untuk pribadi, belajar, riset; komersial butuh lisensi). Itu source-available, bukan sumber terbuka menurut OSI.
+- **Paket langganan:** ia menjalankan agen seperti Claude Code dan Codex dengan login paketmu; aturan pemakaian otomatis dan multi-agen tiap paket bisa membatasi. Cek ketentuan masing-masing.
+- **Biaya:** "$0" hanya aplikasinya; paket yang dipakai agen tetap berbayar kecuali memakai model gratis OpenCode atau model lokal.
+- **Privasi:** prompt tetap dikirim ke penyedia yang dipilih.
+- Nama sama dengan proyek lain bernama OpenBot (robot berbasis ponsel, dari pengetahuan saya): pastikan membuka openbot.run dan github.com/nightly-labs/openbot.
+
+### 5.9 Hermes di VPS dengan PC pribadi sebagai "tangan" (remote tool endpoint)
+
+Asal pertanyaan: jawaban OpenBot (model GLM-5.3-flash-free) menyebut pola komunitas Hermes: *Hermes utama ditaruh di VPS always-on, PC Windows pribadi jadi "remote tool endpoint" lewat Tailscale + SSH; chat dan memori tetap di server.* Intinya memisahkan **"otak"** (agen yang berpikir dan mengingat) dari **"tangan"** (komputer tempat pekerjaan lokal dilakukan).
+
+```
+  LAPISAN 1   Ponsel (Telegram)
+                                │ pesan chat
+                                ▼
+  ┌───────────────────────────────────────────────────────────┐
+  │               VPS (menyala 24 jam)  =  OTAK               │
+  │ LAPISAN 2   Hermes Agent: loop, memori, skill, cron, chat │
+  │ LAPISAN 3   (opsional) 9Router / freellmapi               │──→ LAPISAN 4: penyedia model
+  │ gateway pesan Hermes jalan sebagai layanan, selalu hidup  │
+  └──────────────────────────────┬────────────────────────────┘
+                                 │ Tailscale (jaringan privat) + SSH
+                                 │ VPS yang masuk ke PC, bukan sebaliknya
+                                 ▼
+  ┌───────────────────────────────────────────────────────────┐
+  │      PC Windows (menyala saat dibutuhkan)  =  TANGAN      │
+  │ menjalankan PowerShell · baca/tulis file di PC            │
+  │ GUI (klik/ketik/screenshot): lebih rumit, lihat catatan   │
+  └───────────────────────────────────────────────────────────┘
+```
+
+**Arti tiap bagian:**
+1. **Hermes di VPS always-on:** dipasang sebagai layanan latar belakang (systemd di Linux, lewat `hermes gateway install` menurut satu panduan). VPS menjadi rumah bagi alat, memori, sesi, cron job, koneksi gateway, file proyek, dan pekerjaan jangka panjang. Permintaan ke model (lapisan 3 dan 4) juga keluar dari VPS, bukan dari PC.
+2. **PC sebagai remote tool endpoint:** "tool endpoint" = tempat alat dijalankan. Hermes punya pengaturan *execution backend* untuk memilih di mana perintah terminal dieksekusi (Docker, Local, atau **SSH** untuk mendelegasikan ke mesin lain). Otak di VPS, sedangkan perintah seperti PowerShell dijalankan di PC lewat SSH.
+3. **Tailscale + SSH:** lihat 5.10.
+4. **Chat dan memori tetap di server:** riwayat dan memori tidak bergantung pada PC. Bila PC mati, Hermes tetap menjawab chat dan menjalankan tugas terjadwal; yang tidak bisa hanya pekerjaan yang butuh PC.
+
+**Manfaat:** agen tersedia 24 jam tanpa PC menyala terus; satu sumber kebenaran untuk chat dan memori yang bisa diakses dari ponsel; pemisahan: agen yang bisa menjalankan alat dan mengelola kredensial ada di mesin terpisah dari mesin harian.
+
+**Dua peran PC yang berbeda (jangan tertukar):**
+- **PC sebagai "tangan"** (VPS menjalankan perintah di PC): yang dijelaskan di atas.
+- **PC sebagai antarmuka:** Hermes Desktop terpasang di PC dan terhubung ke Hermes di VPS. Satu laporan bug GitHub menunjukkan aplikasi desktop Windows yang terhubung ke backend jarak jauh lewat Tailscale sempat kembali memulai backend lokal, jadi tidak selalu mulus.
+
+**Catatan kritis tentang jawaban OpenBot:**
+- **Plugin `windows_control`:** tidak ditemukan; bisa jadi karangan model. Jangan memasang apa pun hanya karena disebut.
+- **Kontrol GUI lewat SSH** (klik, ketik, screenshot) tidak setara dengan menjalankan PowerShell: sesi SSH di Windows umumnya tidak punya akses ke desktop yang sedang aktif. Proyek pihak ketiga yang menyediakan fitur serupa memakai aplikasi pendamping, dan satu proyek menyebut pengaturan Windows berbeda.
+- **Analogi OpenBot di akhir tidak jelas:** situs OpenBot menggambarkan aplikasinya berjalan di komputermu dengan aplikasi ponsel yang terhubung ke komputer itu, bukan server terpisah yang meremote komputer lain.
+- Rincian "pola komunitas" berasal dari model gratis, bukan dokumentasi resmi; cek di dokumentasi Hermes.
+
+**Keamanan:** memberi VPS akses SSH ke PC pribadi berarti **agen bisa menjalankan perintah apa pun dengan hak pengguna itu** dan membaca file pribadi. Buat **akun Windows khusus** berhak terbatas (bukan administrator), batasi folder, aktifkan persetujuan perintah, pastikan SSH hanya lewat Tailscale (beberapa alat pihak ketiga memaksa alamat SSH berupa nama atau IP Tailscale), gunakan Tailscale ACL, dan amankan VPS (kunci SSH, pembaruan, firewall). VPS menyimpan kunci API dan memori.
+
+**Cocok untukmu?** Berguna bila ingin agen selalu aktif (cron, Telegram) tetapi pekerjaan berat atau file ada di PC. Bila hanya butuh chat dan agen coding, Hermes di VPS saja cukup, tanpa akses ke PC.
+
+### 5.10 Tailscale dan SSH
+
+**Tailscale** = jaringan privat virtual; **SSH** = cara masuk dan menjalankan perintah di komputer lain dengan aman. Keduanya terpisah dan saling melengkapi.
+
+**Tailscale:**
+- VPN mesh berbasis WireGuard yang membuat perangkat di jaringan mana pun berperilaku seolah satu LAN. Jaringan privat itu disebut **tailnet**. Perangkat yang login ke akun yang sama saling menjangkau langsung dan aman dari mana saja, tanpa port forwarding, perubahan firewall, atau IP publik.
+- Klien tersedia untuk Windows, macOS, Linux, Android, iOS. Tiap perangkat mendapat IP stabil (biasanya berawalan `100.`) dan nama MagicDNS. Koneksi menembus NAT dan firewall otomatis.
+- **ACL** membatasi pengguna dan perangkat mana yang boleh mengakses apa, sampai tingkat IP dan port.
+- **Biaya:** paket Personal gratis untuk pemakaian non-komersial. Halaman resmi menyebut perangkat pengguna tak terbatas, sampai 6 pengguna, dan 3 grup ACL; sumber lain menyebut batas lama (100 perangkat, 3 pengguna) dan ada perubahan harga pada April 2026. Cek tailscale.com/plans.
+- Analogi: kabel LAN virtual yang menyambung HP, PC rumah, dan VPS seolah satu ruangan; hanya perangkat yang login ke akunmu yang bisa masuk.
+
+**SSH (Secure Shell):**
+- Protokol untuk masuk ke command line komputer lain lewat koneksi terenkripsi. Komputer tujuan menjalankan **server SSH**, komputer yang kamu pakai menjalankan **klien SSH**. Contoh: `ssh nama-user@nama-komputer`. Dipakai untuk mengelola VPS, menjalankan perintah jarak jauh, dan memindahkan file.
+- **Cara masuk:** kata sandi (kurang aman) atau **kunci SSH** (pasangan kunci publik dan privat; publik di komputer tujuan, privat tetap di klien). Kunci lebih disarankan.
+- **Di Windows (setahu saya):** klien SSH tersedia, tetapi **OpenSSH Server** adalah fitur opsional yang harus diaktifkan agar PC bisa dimasuki.
+
+```
+TANPA Tailscale                                    DENGAN Tailscale
+VPS ──(internet)──✕── PC di rumah                  VPS ════(tailnet privat)════ PC di rumah
+  PC di balik router, tanpa IP publik;               keduanya punya alamat 100.x dan nama,
+  harus membuka port ke internet (berisiko)          tidak ada port yang dibuka ke publik
+```
+
+- **Tailscale = jalannya** (membuat VPS dan PC saling menjangkau secara privat); **SSH = pintu dan percakapannya** (VPS masuk ke PC dan menjalankan perintah). SSH bisa dipakai tanpa Tailscale (butuh IP publik dan port terbuka); Tailscale bisa dipakai tanpa SSH (akses layanan web, file, dan lain-lain). Tailscale juga punya **Tailscale SSH** yang mengelola login SSH lewat identitas tailnet (versi dasar di paket gratis), opsional.
+
+**Garis besar setup Hermes (rinciannya belum diverifikasi):**
+1. Buat akun Tailscale, pasang klien di VPS dan PC (dan HP bila mau), login dengan akun yang sama; tes dengan `ping` ke nama perangkat.
+2. Di PC Windows: aktifkan OpenSSH Server dan buat akun pengguna khusus berhak terbatas.
+3. Di VPS: buat kunci SSH, taruh kunci publik di PC, tes `ssh user@nama-pc` lewat nama Tailscale.
+4. Setel Hermes memakai SSH sebagai execution backend.
+
+**Keamanan:** pakai kunci SSH (nonaktifkan login kata sandi bila bisa); jangan buka port SSH ke internet; batasi dengan ACL dan akun Windows khusus; aktifkan verifikasi dua langkah pada akun login Tailscale; jangan bagikan kunci privat.
+
+**Relevansi:** Tailscale juga menjawab masalah bot atau aplikasi di HP yang tidak bisa menjangkau layanan `127.0.0.1` di PC (mis. API Gateway Cherry Studio): HP dan PC dalam satu tailnet saling menjangkau lewat alamat Tailscale. Layanannya tetap harus mau menerima koneksi pada alamat itu; jangan dibuka lebih luas dari perlu.
+
 ---
 
 ## 6. Gateway dan Fallback Otomatis (Lapisan 3)
@@ -957,6 +1154,37 @@ Angka "7,4 miliar token per bulan" di README adalah **jumlah seluruh paket grati
 - Uji tool calling sebelum dipakai untuk agen (lihat 5.4).
 
 **Dibanding 9Router:** freellmapi menekankan key API resmi dari tiap penyedia gratis; 9Router juga menyediakan jalur OAuth/cookie/MITM yang lebih berisiko (lihat 6.2). Keduanya bisa diarahkan dari Cherry Studio, OpenCode, Cline, dan lain-lain lewat endpoint OpenAI-compatible. **Saran:** bila Gemini dan geraikita sudah cukup, OpenRouter atau skrip fallback sendiri memadai; freellmapi layak dicoba bila ingin memanfaatkan banyak paket gratis sekaligus, hanya untuk eksperimen pribadi.
+
+### 6.8 Fallback di dalam agen (OMH) vs di gateway (9Router)
+
+Keduanya menyelesaikan masalah berbeda dan **saling melengkapi**. OMH menjawab **"model apa yang cocok untuk tugas ini?"** (model berpikir dalam untuk arsitektur, model cepat untuk perbaikan kecil). 9Router menjawab **"penyedia mana yang masih punya kuota dan murah sekarang?"**
+
+```
+A. Fallback di dalam agen (oh-my-hermes)
+   Hermes + OMH ──[lane "deep": rantai A → B → C]──→ penyedia A / B / C
+                      (tiap penyedia butuh key sendiri; langsung dari agen)
+
+B. Fallback di gateway (9Router)
+   Aplikasi apa pun ──→ 9Router ──[combo: A → B → C + kuota + rotasi akun]──→ penyedia A / B / C
+
+C. Gabungan
+   Hermes + OMH ──[lane → nama model/combo]──→ 9Router ──[kuota, rotasi, ketersediaan]──→ penyedia
+```
+
+| | Fallback di OMH (dalam agen) | 9Router (lapisan 3) |
+|---|---|---|
+| Dasar memilih model | Jenis tugas (`deep`, `quick`, dan lain-lain) dan effort | Ketersediaan, kuota, biaya (langganan → murah → gratis) |
+| Pemicu pindah | Penyedia menolak sebuah model | Kuota habis, error 429/5xx, pelacakan kuota |
+| Cakupan | Hanya Hermes dan lane yang dijalankannya | Aplikasi apa pun (Cherry Studio, Cline, OpenCode, Claude Code, Hermes) |
+| Kuota dan akun | Tidak ada rotasi akun yang dijelaskan di README | Dasbor kuota dan rotasi banyak akun |
+| Penalaran per lane | Ya (effort per kategori) | Tidak |
+| Pelaporan gagal | Lane gagal tampil `failed`, bukan hijau | Aplikasi tidak tahu perpindahan terjadi |
+| Terjemah format API | Tidak | Ya (mis. format Anthropic untuk Claude Code, menurut klaimnya) |
+| Biaya kompleksitas | Berat (100+ skill, TUI, instalasi) | Ringan (satu proxy) |
+
+**Rekomendasi:** untuk kuota gratis, BYOK, dan beberapa aplikasi sekaligus, **gateway dulu** (9Router, freellmapi, atau skrip sendiri): satu aturan fallback dan kuota untuk semua aplikasi, ringan, bermanfaat tanpa Hermes, dan pelacakan kuota adalah masalah utama paket gratis. Tambahkan OMH hanya bila sudah memakai Hermes, sering menjalankan proyek besar yang bisa dipecah paralel, butuh model dan effort berbeda per jenis pekerjaan, dan ingin bukti verifikasi sebelum "selesai".
+
+**Bila dipakai bersama (susunan C):** belum diuji apakah rantai model OMH cocok dengan nama combo 9Router. Jangan menumpuk dua fallback yang bertabrakan: biarkan OMH memilih tingkat kualitas (satu model utama per kategori) dan 9Router menangani pergantian penyedia untuk model yang sama. Bila 9Router menyembunyikan error, OMH mungkin tidak tahu penyebab kegagalan: uji dulu dengan satu lane sebelum menjalankan graf besar.
 
 ---
 
@@ -1774,6 +2002,8 @@ Produk yang menggabungkan beberapa lapisan dalam satu paket mudah dipakai tetapi
 | herdr | Pendamping (pengelola agen) | Tidak | Tidak | Tidak |
 | Claude Console | Panel kontrol lapisan 4, bukan jalur permintaan | | | |
 | freellmapi | Tidak | Tidak | **Ya** (lintas paket gratis) | Tidak (memakai key penyedia gratis milikmu) |
+| OpenBot | Ya (desktop + mobile) | Koordinasi tim agen (Codex, Claude Code, OpenCode, dan lain-lain) | Fallback internal; endpoint OpenAI-compatible opsional | Paket langganan, API key, atau model lokal |
+| oh-my-hermes | TUI `omh` | Perpanjangan agen Hermes (router skill, graf paralel) | Logika fallback model di dalam agen (bukan proxy) | Bergantung penyedia yang dipakai Hermes |
 
 ---
 
@@ -1801,6 +2031,9 @@ Produk yang menggabungkan beberapa lapisan dalam satu paket mudah dipakai tetapi
 - **Langganan konsumen lewat jalur tidak resmi** (mis. login Claude Pro/Max di alat pihak ketiga) berisiko diblokir; pakai API key resmi.
 - **API murah dari reseller tak dikenal:** waspadai model masking (model murah diberi nama model mahal), konteks dipotong, streaming palsu, dan tagihan digelembungkan. Semua prompt, kode, dan isi `.env` lewat server mereka; gunakan key uji berisaldo kecil dan jangan kirim data sensitif (lihat 2.13).
 - **freellmapi:** jangan buka port 3001 ke internet; key penyedia tersimpan terenkripsi tetapi tetap di komputermu; prompt bisa dilayani penyedia mana pun yang aktif; pakai satu key sah per penyedia dan hormati ketentuan tiap paket gratis (lihat 6.7).
+- **PC pribadi sebagai "tangan" agen (SSH dari VPS):** agen bisa menjalankan perintah apa pun dengan hak pengguna itu. Pakai akun Windows khusus berhak terbatas, SSH hanya lewat Tailscale, kunci SSH (bukan kata sandi), ACL, dan persetujuan perintah (lihat 5.9 dan 5.10).
+- **OpenBot (preview):** agen bisa membaca dan mengubah file, menjalankan perintah, memakai jaringan, dan mengendalikan browser tanpa bertanya tiap kali; simpan cadangan dan berikan hanya tugas yang dipercaya. Lisensinya noncommercial (lihat 5.8).
+- **oh-my-hermes:** pemasangan lewat `curl | sh`; README memuat prompt siap-tempel untuk agen AI agar memasang proyek: jalankan hanya atas keputusanmu. Banyak lane paralel menguras kuota (lihat 5.7 dan 6.8).
 
 ---
 
@@ -1869,6 +2102,15 @@ Produk yang menggabungkan beberapa lapisan dalam satu paket mudah dipakai tetapi
 | **Streaming palsu** | Jawaban ditunggu penuh lalu dipotong-potong seolah mengalir bertahap |
 | **Needle-in-a-haystack** | Uji konteks dengan menaruh satu fakta di tengah teks panjang lalu menanyakannya kembali |
 | **Unified key (freellmapi)** | Kunci lokal `freellmapi-…` buatan router-mu sendiri; bukan key dari penyedia atau dari situs freellmapi |
+| **Tailscale / tailnet** | VPN mesh berbasis WireGuard yang menyambung perangkatmu seolah satu LAN privat (tailnet), tanpa port forwarding atau IP publik |
+| **SSH / kunci SSH** | Protokol masuk ke command line komputer lain secara terenkripsi; kunci publik di tujuan, kunci privat di klien |
+| **OpenSSH Server** | Fitur opsional Windows yang harus diaktifkan agar PC bisa dimasuki lewat SSH |
+| **Remote tool endpoint / execution backend** | Tempat alat agen dijalankan (mis. PC lewat SSH), terpisah dari tempat agen berpikir (VPS) |
+| **Harness / lapisan operasi** | Perangkat lunak di atas agen yang mengatur skill, pemilihan model, paralelisme, dan verifikasi (oh-my-hermes, oh-my-claudecode) |
+| **Lane** | Jalur kerja di oh-my-hermes dengan kategori kerja dan rantai model sendiri |
+| **DAG (graph run)** | Graf node kerja kecil yang saling bergantung; node siap berjalan paralel (`/dag-ulw`) |
+| **ACP (Agent Client Protocol)** | Protokol agar klien/editor bisa memakai berbagai agen coding; dipakai OpenBot untuk menambah agen |
+| **PolyForm Noncommercial** | Lisensi source-available: gratis untuk pribadi/riset, komersial butuh lisensi; bukan sumber terbuka menurut OSI |
 
 ---
 
@@ -1912,136 +2154,157 @@ Dikumpulkan agar tidak dianggap fakta:
 - WhatsApp: perlakuan bot AI pribadi dan risiko jalur tidak resmi.
 - freellmapi: isi bagian disclaimer, kebijakan tiap penyedia soal menumpuk paket gratis, kualitas routing dan konsistensi di pemakaian nyata, aplikasi Android/iOS yang dicantumkan di README, dan keandalan panduan Termux (berlabel eksperimental).
 - Arti "masking" dalam konteks Indonesia ditafsirkan dari istilah teknis setara; alat audit relay (zing, relay-radar, llm-verify, tokenwatt-verify, fpverify, api-model-spy) belum diuji dan hasilnya probabilistik.
+- oh-my-hermes: kompatibilitas rantai model dengan combo 9Router, manfaat nyata (belum ada hasil ukur dipublikasikan), dan detail rantai model per kategori. Alternatif oh-my-*: nama lama oh-my-openagent dan detail tiap proyek (dari direktori dan ulasan).
+- OpenBot: kebijakan tiap paket langganan soal pemakaian otomatis/multi-agen, detail fallback model cadangan, dan produk lain di halaman perbandingannya (halaman ditulis OpenBot sendiri).
+- Hermes di VPS + PC sebagai tangan: plugin `windows_control` tidak ditemukan; cara persis mengatur SSH execution backend di Hermes, apakah alat file ikut berjalan di PC, dan kontrol GUI lewat SSH di Windows.
+- Tailscale: batas paket gratis berbeda antar sumber (perubahan harga April 2026); langkah OpenSSH Server di Windows berasal dari pengetahuan umum.
 
 ---
 
 ## 15. Tanya-Jawab Cepat
 
-**Bagaimana memakai semua model dalam satu tempat?**
+*Pertanyaan diberi nomor berurut (1 sampai 47) agar mudah dirujuk.*
+
+**1. Bagaimana memakai semua model dalam satu tempat?**
 Pakai klien chat (Cherry Studio di PC, Chatbox/RikkaHub di HP) dengan penyedia Gemini dan satu penyedia OpenAI-compatible untuk geraikita. Tambahkan gateway bila ingin fallback.
 
-**Apakah API key Gemini gratis seperti akun gratis Gemini chat?**
+**2. Apakah API key Gemini gratis seperti akun gratis Gemini chat?**
 Ya, bisa dibuat di Google AI Studio dengan paket gratis rate-limited. Claude berbeda: akun gratis claude.ai tidak menghasilkan API key, dan API tidak punya paket gratis permanen.
 
-**Apakah Cherry Studio otomatis pindah model saat kuota habis?**
+**3. Apakah Cherry Studio otomatis pindah model saat kuota habis?**
 Tidak (tidak ada fitur bawaan). Gunakan gateway (9Router/LiteLLM) atau fallback OpenRouter.
 
-**Apa bedanya OpenRouter dan 9Router?**
+**4. Apa bedanya OpenRouter dan 9Router?**
 OpenRouter = layanan cloud penyalur model; 9Router = program lokal pengatur lalu lintas yang bisa memakai OpenRouter sebagai salah satu penyedia.
 
-**Apa bedanya agen dan non-agen?**
+**5. Apa bedanya agen dan non-agen?**
 Non-agen menjawab; agen mengerjakan (alat, siklus, otonomi). Modelnya bisa sama.
 
-**Apakah Hermes Agent punya model sendiri?**
+**6. Apakah Hermes Agent punya model sendiri?**
 Bukan. Ia program agen BYOK; Nous Research memang punya model "Hermes", tetapi itu hal berbeda.
 
-**Bisakah model gratisku jadi otak agen?**
+**7. Bisakah model gratisku jadi otak agen?**
 Bisa bila mendukung tool calling, konteks panjang, dan kuotanya cukup. Uji dulu (5.4).
 
-**Mengapa model di bot tidak tahu juara Piala Dunia 2026, tetapi di Cherry Studio tahu?**
+**8. Mengapa model di bot tidak tahu juara Piala Dunia 2026, tetapi di Cherry Studio tahu?**
 Bot tidak mencari web untuk chat biasa; Cherry Studio memakai pencarian web. Model tidak tahu peristiwa setelah batas pengetahuannya.
 
-**Apakah pencarian web di bot gratis?**
+**9. Apakah pencarian web di bot gratis?**
 Bisa, lewat kuota gratis Tavily/Firecrawl (sekitar 1.000/bulan). Hasil pencarian tetap memakai token.
 
-**Mengapa Cherry Studio bisa mencari web gratis?**
+**10. Mengapa Cherry Studio bisa mencari web gratis?**
 Penyedia pencarian bawaannya, exaMCP (server MCP hosted milik Exa), bisa dipakai tanpa API key pada paket gratis yang dibatasi. Ada juga DuckDuckGo tanpa key dan penyedia lain berkey dengan kuota gratis (lihat 4.2). Penjelasan lama tentang "pencarian lokal" sudah diluruskan.
 
-**Apa bedanya low/medium/high dengan standard/fast/flex?**
+**11. Apa bedanya low/medium/high dengan standard/fast/flex?**
 Yang pertama kedalaman berpikir (high = lebih banyak token, lebih lambat); yang kedua kecepatan/harga (flex = murah dan lambat, fast = cepat dan mahal), tanpa mengubah jumlah token.
 
-**Apakah Hugging Face sama seperti OpenRouter?**
+**12. Apakah Hugging Face sama seperti OpenRouter?**
 Sebagian. HF adalah gudang model plus penyedia API (Inference Providers) dengan kuota gratis kecil, katalog condong ke model terbuka.
 
-**Bagaimana memakai AI di VS Code?**
+**13. Bagaimana memakai AI di VS Code?**
 Pasang Cline atau Kilo Code (BYOK), atau Copilot gratis; Cursor/Windsurf adalah aplikasi terpisah berlangganan.
 
-**Muse by Meta itu apa?**
+**14. Muse by Meta itu apa?**
 Personal AI agent terkelola: klien + agen + komputer cloud + model sendiri dalam paket tertutup; bukan provider API.
 
-**Claude Desktop (dengan banyak skill dan MCP) itu klien chat, agen, atau seperti Muse?**
+**15. Claude Desktop (dengan banyak skill dan MCP) itu klien chat, agen, atau seperti Muse?**
 Tergantung tabnya: Chat = klien chat dengan alat; Cowork = agen otonom yang bekerja di komputermu; Code = agen coding. Banyaknya skill/MCP tidak mengubah kategori. Mirip Muse dari sisi tujuan (agen satu vendor), tetapi bekerja di mesinmu, bukan di cloud (lihat 10.7 sampai 10.9).
 
-**Apakah ada ekstensi VS Code selain Claude Code yang BYOK, dan bisa ganti model otomatis saat kuota habis?**
+**16. Apakah ada ekstensi VS Code selain Claude Code yang BYOK, dan bisa ganti model otomatis saat kuota habis?**
 Ada: Cline dan Kilo Code. Kilo Code punya Virtual Quota Fallback yang pindah otomatis antar-profil penyedia berdasarkan batas atau error. Cline tidak ditemukan fitur setara; jalurnya lewat OpenRouter atau gateway (lihat 9.6). Claude Code juga bisa dialihkan ke model lain lewat gateway, tetapi itu bukan jalur resmi.
 
-**Setup vibe coding yang populer seperti apa?**
+**17. Setup vibe coding yang populer seperti apa?**
 Stack per tahap: alat kode (Lovable/Bolt/Replit atau Cursor/Claude Code/VS Code + Cline/Kilo Code), backend Supabase, deploy Vercel/Netlify/Cloudflare, GitHub untuk versi. Paket gratis BYOK: VS Code + Kilo Code + Gemini + gateway fallback (lihat 9.7).
 
-**Google Antigravity itu apa, dan labelnya?**
+**18. Google Antigravity itu apa, dan labelnya?**
 IDE berbasis agen dari Google (fork VS Code, dengan Agent Manager dan Artifacts): lapisan klien + agen khusus coding, model Gemini plus Claude/OpenAI tertentu. Bukan klien chat umum dan tidak seperti Muse (lihat 9.8).
 
-**Google Jules itu apa, dan labelnya?**
+**19. Google Jules itu apa, dan labelnya?**
 Agen coding asinkron di VM Google Cloud yang menghasilkan pull request dari repositori GitHub. Agen AI khusus coding; secara arsitektur paling mirip Muse, tetapi untuk kode. Bukan untuk vibe coding interaktif (lihat 9.9).
 
-**Apa fungsi "URL fetch provider" di pengaturan web search Cherry Studio?**
+**20. Apa fungsi "URL fetch provider" di pengaturan web search Cherry Studio?**
 Mengambil isi lengkap satu halaman (URL) menjadi teks bersih; terpisah dari penyedia pencarian yang hanya menemukan halaman. Default Jina Reader bisa dipakai tanpa key pada mode dasar (lihat 4.4).
 
-**Apa fungsi API Gateway di Cherry Studio?**
+**21. Apa fungsi API Gateway di Cherry Studio?**
 Menjadikan Cherry Studio gateway lokal (`127.0.0.1:23333`) yang mengekspos penyedia/model yang sudah diatur lewat API kompatibel OpenAI dan Anthropic, sehingga alat lain tidak perlu key penyedia sendiri. Key gateway sangat berkuasa, hanya lokal, dan tidak ada fallback otomatis (lihat 3.6).
 
-**Bisakah vibe coding di VS Code memakai AI dari Cherry Studio?**
+**22. Bisakah vibe coding di VS Code memakai AI dari Cherry Studio?**
 Bisa: lewat Code Mate (CLI di terminal) atau lewat API Gateway yang dipakai Cline/Kilo Code sebagai penyedia OpenAI-compatible. Untuk vibe coding saja, menyambungkan ekstensi langsung ke Gemini/geraikita lebih sederhana (lihat 9.11).
 
-**Apakah rantai VS Code → Cline/Kilo Code → Cherry Studio → 9Router benar?**
+**23. Apakah rantai VS Code → Cline/Kilo Code → Cherry Studio → 9Router benar?**
 Bisa jalan, tetapi Cherry Studio di sana berperan sebagai gateway (bukan klien chat), VS Code hanya tempat ekstensi, dan dua gateway berurutan berlebihan. Lebih baik semua alat sejajar ke satu gateway (lihat 11.3).
 
-**Apa itu Claude Console, dan apakah itu "provider"?**
+**24. Apa itu Claude Console, dan apakah itu "provider"?**
 Dasbor developer Anthropic (platform.claude.com) untuk membuat API key, mengisi saldo, memasang batas, dan Workbench. Bukan penyedia model; penyedianya Claude API. Perannya sepadan dengan Google AI Studio, tetapi API Claude tidak punya paket gratis permanen (lihat 2.9).
 
-**Bisakah API Claude Console dijadikan bot Telegram atau WhatsApp?**
+**25. Bisakah API Claude Console dijadikan bot Telegram atau WhatsApp?**
 Telegram: ya, lewat Messages API native (atau lapisan kompatibel OpenAI, atau lewat gateway); lihat 7.5. WhatsApp: Meta melarang chatbot AI serba guna di Business Platform sejak 15 Januari 2026, jalur tidak resmi berisiko (lihat 7.6).
 
-**Bisakah Cherry Studio menjawab dari dokumen saya (mirip NotebookLM)?**
+**26. Bisakah Cherry Studio menjawab dari dokumen saya (mirip NotebookLM)?**
 Ya, lewat Knowledge Base (RAG) dengan model embedding; berbeda dari NotebookLM dalam pertanyaan menyeluruh dan fitur ekstra (lihat 3.8).
 
-**Apakah Cherry Studio punya bot Telegram bawaan?** (diluruskan)
+**27. Apakah Cherry Studio punya bot Telegram bawaan?** (diluruskan)
 Ada, lewat fitur Channels untuk Agent (Telegram, Discord, Feishu, Slack); Cherry Studio harus tetap berjalan dan API Gateway aktif. Klaim lama "tidak punya" sudah dikoreksi (lihat 3.9 dan 7.4).
 
-**Apakah Cherry Studio bisa mengunduh dan menjalankan model lokal?**
+**28. Apakah Cherry Studio bisa mengunduh dan menjalankan model lokal?**
 Tidak sendiri; ia terhubung ke Ollama atau LM Studio yang mengunduh dan menjalankan model (lihat 2.10).
 
-**Apa itu Unsloth Studio, dan apakah mendukung Telegram/WhatsApp atau Android?**
+**29. Apa itu Unsloth Studio, dan apakah mendukung Telegram/WhatsApp atau Android?**
 Antarmuka web lokal untuk menjalankan dan melatih model terbuka (Beta). Tidak ada fitur Telegram/WhatsApp maupun versi Android yang ditemukan; bisa membuka endpoint API untuk alat lain (lihat 2.11).
 
-**Apakah Colab atau Kaggle itu VPS?**
+**30. Apakah Colab atau Kaggle itu VPS?**
 Bukan: mesin virtual sementara per sesi. Kaggle punya kuota GPU mingguan yang tetap, Colab lebih tidak terduga; keduanya tidak cocok untuk layanan 24/7 (lihat 2.12).
 
-**Apa itu Codex?**
+**31. Apa itu Codex?**
 Agen coding OpenAI dengan banyak antarmuka (CLI, ekstensi IDE, desktop, cloud); bukan IDE (lihat 9.12).
 
-**Apa bedanya GitHub Copilot dan Microsoft Copilot?**
+**32. Apa bedanya GitHub Copilot dan Microsoft Copilot?**
 GitHub Copilot = asisten dan agen coding; Microsoft Copilot = klien chat konsumen; Microsoft 365 Copilot = asisten di aplikasi kantor (lihat 9.13 dan 10.10).
 
-**OpenCode itu agen atau provider?**
+**33. OpenCode itu agen atau provider?**
 Utamanya agen coding sumber terbuka (lapisan 1 dan 2) dengan layanan opsional mirip penyedia (Zen dan Go); bisa dipakai sebagai agen murni dengan key sendiri (lihat 9.14).
 
-**Apa pesaing OpenCode dan mana terbaik untuk vibe coding?**
+**34. Apa pesaing OpenCode dan mana terbaik untuk vibe coding?**
 Aider, Cline, Kilo Code, Goose, Crush, Qwen Code, dan lain-lain. Tidak ada yang terbaik untuk semua; untuk VS Code gratis BYOK, Kilo Code atau Cline; kualitas model lebih menentukan daripada alat (lihat 9.15).
 
-**Apa itu herdr, dan apakah gateway seperti 9Router?**
+**35. Apa itu herdr, dan apakah gateway seperti 9Router?**
 Multiplexer terminal untuk banyak agen coding (seperti tmux). Bukan gateway: ia mengelola sesi agen, 9Router mengelola jalur ke model (lihat 9.16).
 
-**Bagaimana Claude Code bisa menyetir Codex?**
+**36. Bagaimana Claude Code bisa menyetir Codex?**
 Lewat socket dan CLI herdr (skill herdr): Claude Code membuat pane, menjalankan Codex, mengirim prompt, menunggu status, dan membaca keluaran; orkestrasi tingkat terminal, bukan tingkat model (lihat 9.18).
 
-**Apakah skill claude.ai otomatis, dan bisakah memakai claude-mem di web?**
+**37. Apakah skill claude.ai otomatis, dan bisakah memakai claude-mem di web?**
 Skill bawaan otomatis; skill kustom diunggah sebagai ZIP. claude-mem adalah plugin lokal (hook, worker, SQLite/Chroma) sehingga tidak bisa di web (lihat 10.11).
 
-**Apa itu memory layer dan kombinasi agen + Obsidian?**
+**38. Apa itu memory layer dan kombinasi agen + Obsidian?**
 Penyimpanan di luar model tempat agen menulis dan membaca pengetahuan lintas sesi; Obsidian adalah folder Markdown yang bisa dibaca dan ditulis agen (lihat 5.6).
 
-**Apa bedanya model free OpenRouter dengan freellmapi, dan kenapa freellmapi tidak memberi API key?**
+**39. Apa bedanya model free OpenRouter dengan freellmapi, dan kenapa freellmapi tidak memberi API key?**
 OpenRouter adalah layanan cloud dengan akun dan key sendiri; freellmapi adalah router yang dijalankan sendiri dan tidak menerbitkan key. Kamu memasukkan key gratis dari tiap penyedia asli; "unified key"-nya hanya kunci lokal (lihat 6.7).
 
-**Bagaimana cara memakai freellmapi?**
+**40. Bagaimana cara memakai freellmapi?**
 Pasang (desktop, Docker, atau Termux eksperimental), tambahkan key penyedia di halaman Keys, salin unified key, lalu arahkan aplikasi ke `http://localhost:3001/v1` dengan model `auto` (lihat 6.7).
 
-**Apa maksud "masking gak?" pada layanan API murah?**
+**41. Apa maksud "masking gak?" pada layanan API murah?**
 Menanyakan apakah penjual menyamarkan model murah seolah-olah model mahal (model masking atau model dilution). Trik terkait: konteks dipotong, streaming palsu, tagihan digelembungkan (lihat 2.13).
 
-**Bagaimana mengecek apakah API murah benar-benar memakai model aslinya?**
+**42. Bagaimana mengecek apakah API murah benar-benar memakai model aslinya?**
 Bandingkan harga dengan harga resmi, uji identitas dan batas pengetahuan, uji konteks (needle-in-a-haystack), bandingkan soal sulit dengan API resmi, hitung token sendiri, dan ulangi di waktu berbeda. Alat audit seperti zing dan relay-radar bisa membantu (lihat 2.13).
+
+**43. Apa fungsi oh-my-hermes dan di mana posisinya di lapisan?**
+Lapisan operasi di atas Hermes Agent: router skill, model per kategori kerja, graf paralel `/dag-ulw`, memori proyek, dan verifikasi bukti. Perpanjangan lapisan 2 dengan TUI di lapisan 1; logika pindah model mirip lapisan 3 tetapi di dalam agen (lihat 5.7).
+
+**44. Fallback di OMH vs gateway 9Router: mana yang direkomendasikan?**
+Gateway dulu untuk kuota dan ketersediaan lintas aplikasi; OMH hanya bila sudah memakai Hermes dan butuh pemilihan model per jenis tugas. Keduanya melengkapi (lihat 6.8).
+
+**45. Apa itu OpenBot dan di lapisan mana?**
+Aplikasi desktop gratis untuk tim agen di komputermu (Codex, Claude Code, OpenCode, dan lain-lain sebagai "pekerja"). Lapisan 1 + koordinasi di atas agen lapisan 2; preview, lisensi noncommercial (lihat 5.8).
+
+**46. Apa maksud "Hermes di VPS, PC jadi remote tool endpoint lewat Tailscale + SSH"?**
+Otak (agen, chat, memori) di VPS yang selalu menyala; PC jadi "tangan" tempat perintah dijalankan lewat SSH di jaringan privat Tailscale. Chat dan memori tetap di server (lihat 5.9).
+
+**47. Apa itu Tailscale dan SSH?**
+Tailscale: jaringan privat virtual yang menyambung perangkatmu tanpa membuka port. SSH: cara masuk dan menjalankan perintah di komputer lain secara terenkripsi, lebih aman dengan kunci SSH (lihat 5.10).
 
 ---
 
@@ -2088,6 +2351,11 @@ Tautan yang muncul dalam hasil pencarian selama percakapan (cek versi terbarunya
 - OpenCode (resmi): https://opencode.ai/docs/providers
 - freellmapi: https://github.com/tashfeenahmed/freellmapi dan https://freellmapi.co
 - Audit relay API dan masking model: https://pypi.org/project/zing-audit/, https://github.com/AetherCore-Dev/relay-radar, https://github.com/mintesnot-teshome/llm-verify, https://pypi.org/project/tokenwatt-verify/, https://github.com/dabaibian/api-model-spy, https://github.com/Mohamed7415/fpverify
+- oh-my-hermes dan alternatif: https://github.com/rlaope/oh-my-hermes, https://github.com/antfleet-ops/oh-my-claudecode, https://x-cmd.com/install/oh-my-claudecode, https://openapps.pro/apps/oh-my-claudecode
+- OpenBot: https://openbot.run dan https://openalternative.co/alternatives/openbot
+- Perbandingan Hermes dan OpenClaw: https://screenshotone.com/blog/hermes-agent-versus-openclaw/ dan https://www.mindstudio.ai/blog/hermes-agent-vs-openclaw-self-hosted-ai-agent-comparison
+- Hermes jarak jauh (Tailscale, SSH, desktop): https://jc-aiwiki.pages.dev/hermes-agent/hermes-remote-access-tailscale-termius-tmux, https://github.com/capthvnsen/alans-way/wiki, https://www.billerickson.net/?p=8700, https://github.com/NousResearch/hermes-agent/issues/38873
+- Tailscale: https://tailscale.com/plans/, https://tailscale.com/pricing-v2/, https://selfhostedworld.com/guides/what-is-tailscale
 
 ---
 
