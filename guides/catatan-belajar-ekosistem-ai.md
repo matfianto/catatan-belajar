@@ -8,6 +8,7 @@
 > **Pembaruan ketiga:** Bagian 2.9 sampai 2.12 (Claude Console, model lokal, Unsloth Studio, Colab dan Kaggle), 3.8 dan 3.9 (Knowledge Base dan Channels di Cherry Studio; **koreksi**: Cherry Studio punya fitur Channels untuk Telegram), 5.6 (memory layer/Obsidian), 7.4 sampai 7.6 (Telegram diluruskan, Claude API di bot, batasan WhatsApp), 9.12 sampai 9.18 (Codex, GitHub Copilot, OpenCode, pesaing, herdr, orkestrasi agen), 10.10 dan 10.11 (keluarga Copilot, skill di claude.ai vs plugin lokal), dan 11.4 (matriks produk vs lapisan).
 > **Pembaruan keempat:** Bagian 2.13 (waspada layanan API murah: model masking dan kecurangan reseller) dan 6.7 (freellmapi: router gratis lintas penyedia, perbandingan dengan OpenRouter, dan cara memakainya), plus baris baru di matriks 11.4, keamanan, glosarium, daftar belum terverifikasi, tanya-jawab, dan sumber.
 > **Pembaruan kelima:** Bagian 5.7 sampai 5.10 (oh-my-hermes dan alternatifnya, OpenBot, Hermes di VPS dengan PC sebagai "tangan", Tailscale dan SSH) dan 6.8 (fallback di dalam agen vs di gateway), plus baris baru di matriks 11.4, keamanan, glosarium, daftar belum terverifikasi, tanya-jawab, dan sumber.
+> **Pembaruan keenam:** Bagian 5.11 (AI Agent vs Agentic AI) dan 2.14 (fine-tuning dan alat yang direkomendasikan), plus butir baru di keamanan, glosarium, daftar belum terverifikasi, tanya-jawab (kini 1 sampai 50), dan sumber. **Tabel 11.4, butir Bagian 12, dan istilah Bagian 13 kini diurutkan menaik (A sampai Z).**
 
 ---
 
@@ -432,6 +433,57 @@ Kamu minta : model = "claude-opus"
 - **Sulit membuktikan kecurangan** setelah uang dibayar.
 
 **Saran:** waspadai harga jauh di bawah resmi, klaim "unlimited", penjual yang tidak menyebut sumber akses, bayar di muka dalam jumlah besar, dan tidak ada jalur refund. Prinsip pengujian ini berlaku untuk penyedia pihak ketiga mana pun, termasuk gateway yang sudah dipakai. Alternatif lebih aman untuk hemat: model yang memang murah secara resmi (mis. Claude Haiku atau DeepSeek resmi) atau paket gratis resmi (Gemini AI Studio, dan lain-lain), ketimbang "diskon" untuk model unggulan.
+
+### 2.14 Fine-tuning: apa itu dan alat yang direkomendasikan
+
+**Apa itu:** melanjutkan pelatihan model yang sudah jadi memakai **dataset kecilmu sendiri**, supaya model lebih cocok dengan gaya, format, atau bidang tertentu. Analoginya lulusan umum yang mengambil kursus spesialis.
+
+```
+Model dasar  +  Dataset kamu (pasangan prompt → jawaban)
+        │
+        ▼
+   Pelatihan (LoRA / QLoRA)  ←  GPU (Kaggle, Colab, RunPod, atau lokal)
+        │
+        ▼
+ Adapter LoRA kecil ──(digabung)──→ model baru ──(ekspor GGUF)──→ Ollama / LM Studio / Unsloth Studio
+        │
+        ▼
+ Evaluasi: bandingkan dengan model dasar pada soal uji yang belum pernah dilihat
+```
+
+**Jenis yang sering disebut:**
+- **Full fine-tuning:** semua bobot model diubah; sangat boros VRAM.
+- **LoRA:** hanya melatih matriks kecil tambahan (adapter); model aslinya dibekukan.
+- **QLoRA:** LoRA di atas model berkuantisasi 4-bit, sehingga model 7 sampai 8B bisa dilatih di satu GPU konsumen.
+- **SFT:** latihan terarah dengan pasangan prompt dan jawaban. **DPO/RLHF/GRPO:** pelatihan penyelarasan berbasis preferensi atau hadiah.
+
+**Kapan fine-tuning, kapan RAG, kapan cukup prompt:**
+
+| Kebutuhan | Pilihan |
+|---|---|
+| Instruksi dan gaya sederhana | Prompt (cepat, gratis) |
+| Menjawab dari dokumen yang sering berubah | RAG (mis. Knowledge Base Cherry Studio, lihat 3.8) |
+| Gaya, format, atau perilaku konsisten; model kecil untuk satu tugas; memangkas prompt panjang | Fine-tuning |
+
+Fine-tuning kurang cocok untuk memasukkan fakta terbaru secara andal (pedoman umum dari saya, bukan dari pencarian). Satu buletin perbandingan bahkan membuka dengan kalimat bahwa kamu belum tentu perlu fine-tuning.
+
+**Yang dibutuhkan:** dataset berkualitas (umumnya ratusan sampai ribuan contoh, format JSONL), GPU (QLoRA model 7 sampai 8B butuh sekitar belasan GB VRAM), dan evaluasi. **Risiko:** overfitting, lupa kemampuan lama, bias data, lisensi model dasar, dan privasi bila data dikirim ke cloud.
+
+**Apakah Unsloth Studio yang direkomendasikan? Tidak mutlak.** Sumber yang dibaca membahas **Unsloth sebagai pustaka**, bukan Unsloth Studio (antarmuka web yang baru dan masih Beta), jadi tidak ada evaluasi independen khusus Studio. Panduan memilih dari satu buletin (Maret 2026):
+
+| Tujuan | Rekomendasi |
+|---|---|
+| Pertama kali mencoba, ingin antarmuka web | **LLaMA-Factory** (LlamaBoard) |
+| Satu GPU dan ingin efisiensi maksimal | **Unsloth** |
+| Pelatihan penyelarasan (RLHF/GRPO/DPO) | **TRL** (bisa digabung dengan Unsloth) |
+| Pipeline produksi berbasis konfigurasi | **Axolotl** |
+| Model vision-language | **LLaMA-Factory** (dukungan terluas) |
+
+Bintang GitHub saat itu: LLaMA-Factory 68,4 ribu, Unsloth 53,9 ribu, TRL 17,6 ribu, Axolotl 11,4 ribu. Alat-alat ini makin saling melengkapi: LLaMA-Factory punya integrasi Unsloth bawaan, dan kernel Unsloth bisa dipakai bersama TRL. Satu uji dari blog penyedia GPU cloud (kondisi uji tidak jelas): QLoRA Llama-3.1 8B pada A100 40GB selesai dalam 3,2 jam dengan Unsloth, 3,4 jam dengan LLaMA-Factory, 4,7 jam dengan TorchTune, dan 5,8 jam dengan Axolotl. Klaim Unsloth sendiri: 2 sampai 5 kali lebih cepat dan VRAM 50 sampai 80% lebih hemat; itu klaim pembuatnya.
+
+**Untuk keadaanmu:** Unsloth Studio di Kaggle adalah jalur terdekat (model kecil 1 sampai 8B, dataset kecil, QLoRA, lalu uji dengan soal di luar data latihan). Coba prompt dan RAG dulu; fine-tuning baru bila keduanya kurang. Alternatif cloud terkelola: Together AI (bayar per token), Vertex AI, SageMaker; satu panduan memperkirakan QLoRA Llama 3 8B di RunPod kurang dari $1 (perkiraan). Cek lisensi model dasar dan jangan melatih dengan data sensitif di layanan pihak ketiga.
+
+**Dalam empat lapisan:** fine-tuning berada di **bengkel di luar empat lapisan** (lihat 2.11); hasilnya baru dipakai di lapisan 4 lokal.
 
 ---
 
@@ -1011,6 +1063,40 @@ VPS ──(internet)──✕── PC di rumah                  VPS ═══�
 **Keamanan:** pakai kunci SSH (nonaktifkan login kata sandi bila bisa); jangan buka port SSH ke internet; batasi dengan ACL dan akun Windows khusus; aktifkan verifikasi dua langkah pada akun login Tailscale; jangan bagikan kunci privat.
 
 **Relevansi:** Tailscale juga menjawab masalah bot atau aplikasi di HP yang tidak bisa menjangkau layanan `127.0.0.1` di PC (mis. API Gateway Cherry Studio): HP dan PC dalam satu tailnet saling menjangkau lewat alamat Tailscale. Layanannya tetap harus mau menerima koneksi pada alamat itu; jangan dibuka lebih luas dari perlu.
+
+### 5.11 AI Agent vs Agentic AI
+
+Ada perbedaan, tetapi **batasnya tidak baku**: dua istilah ini sering dipakai bergantian di materi pemasaran dan oleh penulis berbeda. Definisi yang paling sering dikutip berasal dari taksonomi akademik (Sapkota dkk., 2025, arXiv 2505.10468).
+
+- **AI Agent:** satu entitas berotonomi tinggi dalam lingkup tertentu; pelaksana tunggal yang dibantu alat, reaktif, berbasis LLM.
+- **Agentic AI:** sistem **banyak agen** yang berkolaborasi: memecah tujuan menjadi subtugas, membagi peran, memakai memori bersama, dikoordinasikan orkestrator atau protokol komunikasi. Perumpamaan satu sumber: AI agent = spesialis untuk satu tugas; agentic AI = manajer proyek.
+
+| | AI Agent | Agentic AI |
+|---|---|---|
+| Definisi | Satu program otonom untuk tugas spesifik | Sistem banyak agen yang berkolaborasi |
+| Cakupan tugas | Sempit dan jelas, modular | Kompleks, bertahap, saling bergantung |
+| Arsitektur | Satu pelaksana dengan alat | Banyak agen spesialis + orkestrator |
+| Otonomi | Tinggi di dalam tugasnya | Lebih luas, dari ujung ke ujung |
+| Interaksi | Pengguna ↔ agen ↔ alat | Ditambah komunikasi antaragen |
+| Memori | Biasanya per agen | Memori bersama yang bertahan |
+| Risiko tambahan | Halusinasi, rapuh, perencanaan panjang | Kegagalan berantai, koordinasi rusak, perilaku tak terduga, kebutuhan audit dan keamanan lebih berat |
+
+```
+Chat biasa            AI Agent (satu agen)             Agentic AI (banyak agen + orkestrasi)
+jawab sekali    →     alat + siklus + otonomi    →     pecah tujuan, bagi peran, memori bersama
+
+gemini.google.com     Hermes Agent                     oh-my-claudecode (tim 32 agen)
+Cherry Studio chat    Claude Code                      oh-my-hermes (/dag-ulw, graf paralel)
+                      Codex, OpenCode, Cline           OpenBot (tim agen di komputermu)
+                      bot Telegram + tool use          herdr + Claude Code yang menyetir Codex
+                                                       Antigravity Agent Manager (multi-agen)
+```
+
+Pemetaan contoh di atas adalah penilaian saya, bukan klasifikasi resmi. Dalam empat lapisan: **AI Agent = lapisan 2**; **Agentic AI = beberapa agen di lapisan 2 ditambah lapisan koordinasi di atasnya** (oh-my-claudecode, oh-my-hermes, OpenBot, herdr) dan sering memori bersama.
+
+**Pemakaian lain yang umum** (dari pengetahuan saya): banyak praktisi memakai *agentic* sebagai **kata sifat** untuk seberapa besar suatu sistem bertindak sendiri (merencanakan, memakai alat, mengulang), sehingga satu agen tunggal pun bisa disebut "agentic AI". Cek definisi yang dipakai penulis tiap artikel.
+
+**Kenapa pembedaan berguna:** memilih arsitektur (agen tunggal untuk tugas modular; agentic untuk operasi terorkestrasi, hindari terlalu rumit atau kurang koordinasi), biaya dan kuota (banyak agen = banyak panggilan model), dan keamanan (kegagalan berantai dan banyak kredensial agen).
 
 ---
 
@@ -1983,134 +2069,154 @@ Semua alat memakai alamat 9Router (biasanya `http://localhost:20128/v1`), key da
 
 ### 11.4 Matriks produk vs empat lapisan
 
+*Baris diurutkan menaik (A sampai Z) menurut nama produk.*
+
 Produk yang menggabungkan beberapa lapisan dalam satu paket mudah dipakai tetapi model terkunci pada satu vendor; produk yang memisahkan lapisan lebih bebas tetapi harus dirakit sendiri.
 
 | Produk | L1 Klien | L2 Agen | L3 Gateway | L4 Penyedia |
 |---|---|---|---|---|
-| Cherry Studio | Ya | Fitur tambahan (Agent) | API Gateway lokal, tanpa fallback | Bebas (BYOK) |
-| Hermes Agent | CLI/pesan | Ya | Tidak | Bebas (BYOK) |
-| Claude Desktop | Ya | Ya (Cowork/Code) | Tidak | Claude |
-| Muse by Meta | Ya | Ya | Tidak | Muse Spark |
-| Codex | Ya | Ya | Tidak (opsional) | OpenAI |
-| GitHub Copilot | Ya (ekstensi/CLI) | Ya (agent mode, cloud agent) | Tidak | Multi-model lewat GitHub |
-| Microsoft Copilot (konsumen) | Ya | Sebagian | Tidak | Microsoft + OpenAI |
-| OpenCode | Ya (TUI/desktop/VS Code/web) | Ya | Zen (opsional) | BYOK + Zen/Go |
-| Antigravity | Ya | Ya | Tidak | Gemini + Claude/OpenAI tertentu |
-| Jules | Ya (web/CLI) | Ya | Tidak | Gemini |
-| Unsloth Studio | Ya (UI web) | Sebagian (tool calling) | Tidak | Lokal |
 | 9Router | Tidak | Tidak | **Ya** | Tidak |
-| herdr | Pendamping (pengelola agen) | Tidak | Tidak | Tidak |
+| Antigravity | Ya | Ya | Tidak | Gemini + Claude/OpenAI tertentu |
+| Cherry Studio | Ya | Fitur tambahan (Agent) | API Gateway lokal, tanpa fallback | Bebas (BYOK) |
 | Claude Console | Panel kontrol lapisan 4, bukan jalur permintaan | | | |
+| Claude Desktop | Ya | Ya (Cowork/Code) | Tidak | Claude |
+| Codex | Ya | Ya | Tidak (opsional) | OpenAI |
 | freellmapi | Tidak | Tidak | **Ya** (lintas paket gratis) | Tidak (memakai key penyedia gratis milikmu) |
-| OpenBot | Ya (desktop + mobile) | Koordinasi tim agen (Codex, Claude Code, OpenCode, dan lain-lain) | Fallback internal; endpoint OpenAI-compatible opsional | Paket langganan, API key, atau model lokal |
+| GitHub Copilot | Ya (ekstensi/CLI) | Ya (agent mode, cloud agent) | Tidak | Multi-model lewat GitHub |
+| herdr | Pendamping (pengelola agen) | Tidak | Tidak | Tidak |
+| Hermes Agent | CLI/pesan | Ya | Tidak | Bebas (BYOK) |
+| Jules | Ya (web/CLI) | Ya | Tidak | Gemini |
+| Microsoft Copilot (konsumen) | Ya | Sebagian | Tidak | Microsoft + OpenAI |
+| Muse by Meta | Ya | Ya | Tidak | Muse Spark |
 | oh-my-hermes | TUI `omh` | Perpanjangan agen Hermes (router skill, graf paralel) | Logika fallback model di dalam agen (bukan proxy) | Bergantung penyedia yang dipakai Hermes |
+| OpenBot | Ya (desktop + mobile) | Koordinasi tim agen (Codex, Claude Code, OpenCode, dan lain-lain) | Fallback internal; endpoint OpenAI-compatible opsional | Paket langganan, API key, atau model lokal |
+| OpenCode | Ya (TUI/desktop/VS Code/web) | Ya | Zen (opsional) | BYOK + Zen/Go |
+| Unsloth Studio | Ya (UI web) | Sebagian (tool calling) | Tidak | Lokal |
 
 ---
 
 ## 12. Keamanan dan Privasi (Ringkasan)
 
-- **Jangan menempel API key di chat, screenshot, atau repositori.** Simpan di `.env` dan `.gitignore`. Key di aplikasi klien tersimpan di perangkat.
-- **Paket gratis sering memakai data untuk pelatihan** (Gemini gratis, Mistral gratis, dan lain-lain). Jangan kirim data pribadi/rahasia lewat paket gratis.
-- **Hindari "key gratis" dari situs/grup tidak resmi.**
-- **Gateway/agen pihak ketiga (9Router, Hermes, OpenClaw):** proyek baru dan viral di medsos bukan jaminan aman. Cek repositori resmi, baca skrip pemasangan, jauhi jalur OAuth/cookie/MITM bila bisa, dan waspada skill/marketplace pihak ketiga (ada kasus malware di ClawHub).
+*Butir diurutkan menaik (A sampai Z) menurut judul butir.*
+
 - **Agen bisa menjalankan perintah:** baca persetujuan tiap langkah penting; gunakan isolasi bila tersedia.
-- **Bot Telegram:** set `ALLOWED_IDS` agar kuota tidak dipakai orang lain.
-- **Fallback lintas penyedia:** pesan bisa sampai ke semua penyedia dalam rantai.
-- **Agen terkelola (Muse dan sejenis):** data berada di perusahaannya; pertimbangkan kepercayaanmu sebelum menyambungkan email atau data keuangan.
 - **Agen coding:** hindari mode tanpa persetujuan (Turbo di Antigravity) sebelum nyaman; jalankan di workspace tanpa hak istimewa dan commit sering. Jules menyalin kodemu ke VM Google, jadi cek kebijakan data untuk proyek sensitif.
-- **Supabase:** aktifkan Row Level Security di tiap tabel agar data tidak terbuka lewat API publik.
-- **API Gateway Cherry Studio:** key-nya bisa memakai semua penyedia di aplikasi. Jangan taruh di repositori/tangkapan layar/log; bila bocor, hentikan gateway lalu Regenerate. Biarkan gateway hanya lokal.
-- **Pencarian web dan pengambilan URL:** kueri dikirim ke server pihak ketiga (Exa, Jina, dan lain-lain); jangan menulis data pribadi/rahasia saat pencarian menyala. Isi halaman yang masuk ke prompt tidak sepenuhnya tepercaya (risiko prompt injection).
-- **Notebook pihak ketiga (Kaggle/Colab):** kode berjalan dengan akunmu. Baca dulu; jangan menempelkan Secrets, token Hugging Face, atau API key kecuali perlu (pakai token sekali pakai berizin minimal). Jangan bagikan keluaran sel yang memuat URL dan kata sandi. Jangan menjalankan skrip yang menghapus folder (`rmtree`) di PC sendiri. Tunnel membuka sesimu ke internet: pastikan ada autentikasi.
-- **Unsloth Studio:** alat sisi server (pencarian web, eksekusi kode) aktif secara bawaan dan berjalan sebagai penggunamu. Biarkan hanya lokal; `-H 0.0.0.0` dan `--cloudflare` memperluas paparan.
 - **Agen otomatis tanpa persetujuan** (mis. Claude Code mengendalikan Codex lewat herdr dengan `--yolo`/`--dangerously-skip-permissions`): pengaman dinonaktifkan. Pakai Git, proyek terisolasi, dan hook daftar-tolak.
-- **Memory layer dan claude-mem:** jangan simpan rahasia di vault yang dibaca agen; claude-mem merekam aktivitas agen (hasil alat, isi file) dan memampatkannya dengan model (data dan biaya). Gunakan penanda `<private>` dan baca skrip `npx`/`curl | bash` sebelum menjalankan.
-- **Key Claude API:** buat workspace dan key terpisah per agen/bot dengan batas pengeluaran.
+- **Agen terkelola (Muse dan sejenis):** data berada di perusahaannya; pertimbangkan kepercayaanmu sebelum menyambungkan email atau data keuangan.
+- **API Gateway Cherry Studio:** key-nya bisa memakai semua penyedia di aplikasi. Jangan taruh di repositori/tangkapan layar/log; bila bocor, hentikan gateway lalu Regenerate. Biarkan gateway hanya lokal.
+- **API murah dari reseller tak dikenal:** waspadai model masking (model murah diberi nama model mahal), konteks dipotong, streaming palsu, dan tagihan digelembungkan. Semua prompt, kode, dan isi `.env` lewat server mereka; gunakan key uji berisaldo kecil dan jangan kirim data sensitif (lihat 2.13).
+- **Bot Telegram:** set `ALLOWED_IDS` agar kuota tidak dipakai orang lain.
 - **Cherry Studio Channels (Telegram):** isi daftar ID chat yang diizinkan (kosong berarti semua chat, menurut string aplikasi).
+- **Fallback lintas penyedia:** pesan bisa sampai ke semua penyedia dalam rantai.
+- **Fine-tuning:** dataset bisa memuat data pribadi atau rahasia; jangan dikirim ke layanan pihak ketiga tanpa kebijakan jelas. Periksa lisensi model dasar, dan ingat model hasil latihan bisa menghafal dan membocorkan data latih (lihat 2.14).
+- **freellmapi:** jangan buka port 3001 ke internet; key penyedia tersimpan terenkripsi tetapi tetap di komputermu; prompt bisa dilayani penyedia mana pun yang aktif; pakai satu key sah per penyedia dan hormati ketentuan tiap paket gratis (lihat 6.7).
+- **Gateway/agen pihak ketiga (9Router, Hermes, OpenClaw):** proyek baru dan viral di medsos bukan jaminan aman. Cek repositori resmi, baca skrip pemasangan, jauhi jalur OAuth/cookie/MITM bila bisa, dan waspada skill/marketplace pihak ketiga (ada kasus malware di ClawHub).
+- **Hindari "key gratis" dari situs/grup tidak resmi.**
+- **Jangan menempel API key di chat, screenshot, atau repositori.** Simpan di `.env` dan `.gitignore`. Key di aplikasi klien tersimpan di perangkat.
+- **Key Claude API:** buat workspace dan key terpisah per agen/bot dengan batas pengeluaran.
 - **Knowledge Base:** potongan dokumen dikirim ke penyedia embedding dan model chat; untuk dokumen sensitif jalankan keduanya lokal.
 - **Langganan konsumen lewat jalur tidak resmi** (mis. login Claude Pro/Max di alat pihak ketiga) berisiko diblokir; pakai API key resmi.
-- **API murah dari reseller tak dikenal:** waspadai model masking (model murah diberi nama model mahal), konteks dipotong, streaming palsu, dan tagihan digelembungkan. Semua prompt, kode, dan isi `.env` lewat server mereka; gunakan key uji berisaldo kecil dan jangan kirim data sensitif (lihat 2.13).
-- **freellmapi:** jangan buka port 3001 ke internet; key penyedia tersimpan terenkripsi tetapi tetap di komputermu; prompt bisa dilayani penyedia mana pun yang aktif; pakai satu key sah per penyedia dan hormati ketentuan tiap paket gratis (lihat 6.7).
-- **PC pribadi sebagai "tangan" agen (SSH dari VPS):** agen bisa menjalankan perintah apa pun dengan hak pengguna itu. Pakai akun Windows khusus berhak terbatas, SSH hanya lewat Tailscale, kunci SSH (bukan kata sandi), ACL, dan persetujuan perintah (lihat 5.9 dan 5.10).
-- **OpenBot (preview):** agen bisa membaca dan mengubah file, menjalankan perintah, memakai jaringan, dan mengendalikan browser tanpa bertanya tiap kali; simpan cadangan dan berikan hanya tugas yang dipercaya. Lisensinya noncommercial (lihat 5.8).
+- **Memory layer dan claude-mem:** jangan simpan rahasia di vault yang dibaca agen; claude-mem merekam aktivitas agen (hasil alat, isi file) dan memampatkannya dengan model (data dan biaya). Gunakan penanda `<private>` dan baca skrip `npx`/`curl | bash` sebelum menjalankan.
+- **Notebook pihak ketiga (Kaggle/Colab):** kode berjalan dengan akunmu. Baca dulu; jangan menempelkan Secrets, token Hugging Face, atau API key kecuali perlu (pakai token sekali pakai berizin minimal). Jangan bagikan keluaran sel yang memuat URL dan kata sandi. Jangan menjalankan skrip yang menghapus folder (`rmtree`) di PC sendiri. Tunnel membuka sesimu ke internet: pastikan ada autentikasi.
 - **oh-my-hermes:** pemasangan lewat `curl | sh`; README memuat prompt siap-tempel untuk agen AI agar memasang proyek: jalankan hanya atas keputusanmu. Banyak lane paralel menguras kuota (lihat 5.7 dan 6.8).
+- **OpenBot (preview):** agen bisa membaca dan mengubah file, menjalankan perintah, memakai jaringan, dan mengendalikan browser tanpa bertanya tiap kali; simpan cadangan dan berikan hanya tugas yang dipercaya. Lisensinya noncommercial (lihat 5.8).
+- **Paket gratis sering memakai data untuk pelatihan** (Gemini gratis, Mistral gratis, dan lain-lain). Jangan kirim data pribadi/rahasia lewat paket gratis.
+- **PC pribadi sebagai "tangan" agen (SSH dari VPS):** agen bisa menjalankan perintah apa pun dengan hak pengguna itu. Pakai akun Windows khusus berhak terbatas, SSH hanya lewat Tailscale, kunci SSH (bukan kata sandi), ACL, dan persetujuan perintah (lihat 5.9 dan 5.10).
+- **Pencarian web dan pengambilan URL:** kueri dikirim ke server pihak ketiga (Exa, Jina, dan lain-lain); jangan menulis data pribadi/rahasia saat pencarian menyala. Isi halaman yang masuk ke prompt tidak sepenuhnya tepercaya (risiko prompt injection).
+- **Sistem multi-agen (agentic AI):** risiko kegagalan berantai, koordinasi rusak, dan perilaku tak terduga; tiap agen membawa akses dan kredensial sendiri. Batasi hak, pakai persetujuan dan audit (lihat 5.11).
+- **Supabase:** aktifkan Row Level Security di tiap tabel agar data tidak terbuka lewat API publik.
+- **Unsloth Studio:** alat sisi server (pencarian web, eksekusi kode) aktif secara bawaan dan berjalan sebagai penggunamu. Biarkan hanya lokal; `-H 0.0.0.0` dan `--cloudflare` memperluas paparan.
 
 ---
 
 ## 13. Glosarium
 
+*Istilah diurutkan menaik (A sampai Z).*
+
 | Istilah | Arti singkat |
 |---|---|
-| **API key** | Kunci rahasia untuk memakai API sebuah layanan |
-| **BYOK** | Bring Your Own Key: memakai key milikmu sendiri di aplikasi |
-| **Base URL / endpoint** | Alamat API yang dituju aplikasi |
-| **OpenAI-compatible** | Format API yang meniru OpenAI (`/chat/completions`), dipakai banyak penyedia |
-| **Penyedia (provider)** | Layanan yang menjalankan model dan melayani API |
-| **Agregator** | Penyedia yang menyalurkan banyak model dari banyak pembuat (OpenRouter) |
-| **Gateway / router AI** | Perantara yang mengatur ke penyedia mana permintaan dikirim |
-| **Fallback / failover** | Pindah otomatis ke model/penyedia lain saat gagal atau kuota habis |
-| **Round-robin** | Bergiliran memakai beberapa key/penyedia |
-| **Combo** | Gabungan beberapa penyedia jadi satu penyedia virtual (istilah 9Router) |
-| **Klien chat** | Aplikasi untuk mengobrol dengan banyak model (Cherry Studio) |
-| **Agen (agent)** | Program yang menjalankan siklus: rencana, alat, hasil, lalu mengulang |
-| **Tool calling / function calling** | Kemampuan model meminta pemanggilan alat dalam format terstruktur |
-| **MCP** | Model Context Protocol: standar untuk menyambungkan alat ke model |
-| **Connector** | Istilah lain untuk server MCP (web atau desktop) yang memberi Claude akses ke aplikasi lain |
-| **Skill** | Instruksi tersimpan untuk tugas tertentu ("kartu resep"); connector memberi akses, skill menjelaskan caranya |
-| **Extensions (.mcpb)** | Server MCP yang dikemas untuk pemasangan sekali klik di Claude Desktop |
-| **Cowork** | Tab agen otonom di Claude Desktop yang bekerja di komputer pengguna |
-| **Agent-first IDE** | Editor kode yang dirancang di sekitar agen AI (Antigravity, Cursor, Windsurf) |
-| **Agen asinkron** | Agen yang bekerja di belakang layar (biasanya di cloud) dan mengirim hasil setelah selesai, mis. Jules |
-| **Pull request (PR)** | Usulan perubahan kode di GitHub yang bisa ditinjau sebelum digabung |
-| **Virtual Quota Fallback** | Fitur Kilo Code yang berpindah otomatis antar-profil penyedia saat batas kuota terlewati atau terjadi error |
-| **Row Level Security (RLS)** | Aturan keamanan database (Supabase/PostgreSQL) yang membatasi baris data yang boleh diakses tiap pengguna |
-| **Supabase** | Layanan backend (database PostgreSQL, autentikasi, penyimpanan) yang jadi pilihan bawaan banyak stack vibe coding |
-| **Exa MCP (exaMCP)** | Server MCP hosted milik Exa untuk pencarian web; bisa dipakai tanpa key pada paket gratis yang dibatasi; penyedia pencarian default di Cherry Studio |
-| **Jina Reader** | Layanan yang mengubah URL menjadi teks/Markdown siap pakai LLM (`https://r.jina.ai/<URL>`); penyedia pengambil URL default di Cherry Studio |
-| **URL fetch provider** | Penyedia yang mengambil isi satu halaman web (Jina, Firecrawl, Crawl4AI), terpisah dari penyedia yang mencari |
-| **Crawl4AI** | Pengambil halaman yang berjalan lokal dengan Chromium headless dan rendering JavaScript |
-| **Prompt injection** | Instruksi tersembunyi di isi halaman/dokumen yang mencoba mengarahkan model |
-| **API Gateway (Cherry Studio)** | Server lokal di Cherry Studio yang mengekspos penyedia/model yang sudah diatur lewat API kompatibel OpenAI dan Anthropic |
-| **Code Mate** | Halaman Cherry Studio untuk memasang, mengonfigurasi, dan menjalankan CLI coding (Claude Code, OpenCode, Hermes Agent, dan lain-lain) |
-| **Unified Gateway** | Opsi di Code Mate yang mengarahkan CLI lewat gateway Cherry Studio agar bisa memakai model apa pun yang sudah diatur |
-| **Konteks (context window)** | Jumlah token yang bisa "diingat" model dalam satu permintaan |
-| **Token** | Satuan potongan teks yang dihitung untuk kuota dan biaya |
-| **Rate limit / 429** | Batas jumlah permintaan; 429 berarti batas terlewati |
-| **Kuota** | Jatah pemakaian gratis per menit/hari/bulan |
-| **Reasoning effort** | Seberapa dalam model berpikir (low/medium/high) |
-| **Service tier** | Kompromi biaya dan kecepatan pemrosesan (standard/flex/fast) |
-| **Streaming** | Jawaban muncul bertahap, bukan sekaligus |
-| **Self-hosted** | Dijalankan di perangkat/server milik sendiri |
-| **VPS / VM** | Komputer virtual di cloud |
-| **Fork (VS Code)** | Salinan VS Code yang dimodifikasi menjadi aplikasi terpisah (Cursor, Windsurf) |
-| **Vibe coding** | Membuat perangkat lunak dengan mendeskripsikan keinginan ke AI |
-| **Memory layer** | Penyimpanan di luar model tempat agen menulis dan membaca pengetahuan lintas sesi (mis. vault Obsidian) |
-| **Vault (Obsidian)** | Folder berisi file Markdown yang dikelola aplikasi Obsidian; bisa dibaca dan ditulis agen |
-| **RAG** | Retrieval-Augmented Generation: potongan dokumen relevan dicari lalu dikirim ke model bersama pertanyaan |
-| **Embedding** | Perubahan teks menjadi vektor angka agar kemiripan makna bisa dicari |
-| **Chunk** | Potongan kecil dokumen (sekitar 200 sampai 500 karakter) yang divektorkan |
-| **Knowledge Base (Cherry Studio)** | Fitur RAG untuk menjawab dari file, folder, URL, dan catatanmu |
-| **Channels (Cherry Studio)** | Fitur menghubungkan Agent ke aplikasi pesan (Telegram, Discord, Feishu, Slack) |
-| **Multiplexer (herdr)** | Terminal yang menampung banyak sesi/agen sekaligus dan menjaganya tetap hidup |
-| **Notebook (Colab/Kaggle)** | Lingkungan Jupyter di cloud dengan mesin virtual sementara dan GPU terbatas |
-| **Zen / Go (OpenCode)** | Layanan opsional milik OpenCode: gateway bayar-per-pemakaian (Zen) dan langganan model open-weight (Go) |
-| **Claude Console** | Dasbor developer Anthropic untuk membuat key, saldo, batas, dan Workbench; bukan penyedia model |
-| **Messages API** | API native Claude (`/v1/messages`) dengan `x-api-key`, `anthropic-version`, dan `max_tokens` wajib |
-| **Plugin (Claude Code)** | Paket yang menggabungkan skill, hook, dan MCP; jalan lokal, beda dengan skill ZIP di claude.ai |
-| **Model masking (model dilution)** | Penjual API menyamarkan model murah sebagai model mahal (nama model dan identitas dipalsukan) |
-| **Relay / reseller API** | Layanan perantara yang menjual akses API model, sering dengan harga jauh di bawah resmi |
-| **Streaming palsu** | Jawaban ditunggu penuh lalu dipotong-potong seolah mengalir bertahap |
-| **Needle-in-a-haystack** | Uji konteks dengan menaruh satu fakta di tengah teks panjang lalu menanyakannya kembali |
-| **Unified key (freellmapi)** | Kunci lokal `freellmapi-…` buatan router-mu sendiri; bukan key dari penyedia atau dari situs freellmapi |
-| **Tailscale / tailnet** | VPN mesh berbasis WireGuard yang menyambung perangkatmu seolah satu LAN privat (tailnet), tanpa port forwarding atau IP publik |
-| **SSH / kunci SSH** | Protokol masuk ke command line komputer lain secara terenkripsi; kunci publik di tujuan, kunci privat di klien |
-| **OpenSSH Server** | Fitur opsional Windows yang harus diaktifkan agar PC bisa dimasuki lewat SSH |
-| **Remote tool endpoint / execution backend** | Tempat alat agen dijalankan (mis. PC lewat SSH), terpisah dari tempat agen berpikir (VPS) |
-| **Harness / lapisan operasi** | Perangkat lunak di atas agen yang mengatur skill, pemilihan model, paralelisme, dan verifikasi (oh-my-hermes, oh-my-claudecode) |
-| **Lane** | Jalur kerja di oh-my-hermes dengan kategori kerja dan rantai model sendiri |
-| **DAG (graph run)** | Graf node kerja kecil yang saling bergantung; node siap berjalan paralel (`/dag-ulw`) |
 | **ACP (Agent Client Protocol)** | Protokol agar klien/editor bisa memakai berbagai agen coding; dipakai OpenBot untuk menambah agen |
+| **Agen (agent)** | Program yang menjalankan siklus: rencana, alat, hasil, lalu mengulang |
+| **Agen asinkron** | Agen yang bekerja di belakang layar (biasanya di cloud) dan mengirim hasil setelah selesai, mis. Jules |
+| **Agent-first IDE** | Editor kode yang dirancang di sekitar agen AI (Antigravity, Cursor, Windsurf) |
+| **Agentic AI** | Sistem banyak agen yang berkolaborasi dengan orkestrasi, memori bersama, dan pemecahan tujuan (menurut taksonomi akademik); sebagian praktisi memakainya sebagai kata sifat tingkat otonomi |
+| **Agregator** | Penyedia yang menyalurkan banyak model dari banyak pembuat (OpenRouter) |
+| **AI Agent** | Entitas tunggal berotonomi yang memakai alat untuk menyelesaikan tugas dalam lingkup tertentu |
+| **API Gateway (Cherry Studio)** | Server lokal di Cherry Studio yang mengekspos penyedia/model yang sudah diatur lewat API kompatibel OpenAI dan Anthropic |
+| **API key** | Kunci rahasia untuk memakai API sebuah layanan |
+| **Base URL / endpoint** | Alamat API yang dituju aplikasi |
+| **BYOK** | Bring Your Own Key: memakai key milikmu sendiri di aplikasi |
+| **Channels (Cherry Studio)** | Fitur menghubungkan Agent ke aplikasi pesan (Telegram, Discord, Feishu, Slack) |
+| **Chunk** | Potongan kecil dokumen (sekitar 200 sampai 500 karakter) yang divektorkan |
+| **Claude Console** | Dasbor developer Anthropic untuk membuat key, saldo, batas, dan Workbench; bukan penyedia model |
+| **Code Mate** | Halaman Cherry Studio untuk memasang, mengonfigurasi, dan menjalankan CLI coding (Claude Code, OpenCode, Hermes Agent, dan lain-lain) |
+| **Combo** | Gabungan beberapa penyedia jadi satu penyedia virtual (istilah 9Router) |
+| **Connector** | Istilah lain untuk server MCP (web atau desktop) yang memberi Claude akses ke aplikasi lain |
+| **Cowork** | Tab agen otonom di Claude Desktop yang bekerja di komputer pengguna |
+| **Crawl4AI** | Pengambil halaman yang berjalan lokal dengan Chromium headless dan rendering JavaScript |
+| **DAG (graph run)** | Graf node kerja kecil yang saling bergantung; node siap berjalan paralel (`/dag-ulw`) |
+| **Dataset (JSONL)** | Kumpulan contoh latihan, sering berformat JSONL (satu contoh per baris) |
+| **DPO / RLHF / GRPO** | Teknik pelatihan penyelarasan berbasis preferensi atau hadiah |
+| **Embedding** | Perubahan teks menjadi vektor angka agar kemiripan makna bisa dicari |
+| **Exa MCP (exaMCP)** | Server MCP hosted milik Exa untuk pencarian web; bisa dipakai tanpa key pada paket gratis yang dibatasi; penyedia pencarian default di Cherry Studio |
+| **Extensions (.mcpb)** | Server MCP yang dikemas untuk pemasangan sekali klik di Claude Desktop |
+| **Fallback / failover** | Pindah otomatis ke model/penyedia lain saat gagal atau kuota habis |
+| **Fine-tuning** | Melanjutkan pelatihan model jadi dengan dataset sendiri agar cocok dengan gaya, format, atau bidang tertentu |
+| **Fork (VS Code)** | Salinan VS Code yang dimodifikasi menjadi aplikasi terpisah (Cursor, Windsurf) |
+| **Gateway / router AI** | Perantara yang mengatur ke penyedia mana permintaan dikirim |
+| **Harness / lapisan operasi** | Perangkat lunak di atas agen yang mengatur skill, pemilihan model, paralelisme, dan verifikasi (oh-my-hermes, oh-my-claudecode) |
+| **Jina Reader** | Layanan yang mengubah URL menjadi teks/Markdown siap pakai LLM (`https://r.jina.ai/<URL>`); penyedia pengambil URL default di Cherry Studio |
+| **Klien chat** | Aplikasi untuk mengobrol dengan banyak model (Cherry Studio) |
+| **Knowledge Base (Cherry Studio)** | Fitur RAG untuk menjawab dari file, folder, URL, dan catatanmu |
+| **Konteks (context window)** | Jumlah token yang bisa "diingat" model dalam satu permintaan |
+| **Kuantisasi** | Mengecilkan presisi bobot model (mis. 4-bit) untuk menghemat memori |
+| **Kuota** | Jatah pemakaian gratis per menit/hari/bulan |
+| **Lane** | Jalur kerja di oh-my-hermes dengan kategori kerja dan rantai model sendiri |
+| **LoRA / adapter** | Fine-tuning ringan yang hanya melatih matriks kecil tambahan (adapter); model dasar dibekukan |
+| **MCP** | Model Context Protocol: standar untuk menyambungkan alat ke model |
+| **Memory layer** | Penyimpanan di luar model tempat agen menulis dan membaca pengetahuan lintas sesi (mis. vault Obsidian) |
+| **Messages API** | API native Claude (`/v1/messages`) dengan `x-api-key`, `anthropic-version`, dan `max_tokens` wajib |
+| **Model masking (model dilution)** | Penjual API menyamarkan model murah sebagai model mahal (nama model dan identitas dipalsukan) |
+| **Multiplexer (herdr)** | Terminal yang menampung banyak sesi/agen sekaligus dan menjaganya tetap hidup |
+| **Needle-in-a-haystack** | Uji konteks dengan menaruh satu fakta di tengah teks panjang lalu menanyakannya kembali |
+| **Notebook (Colab/Kaggle)** | Lingkungan Jupyter di cloud dengan mesin virtual sementara dan GPU terbatas |
+| **OpenAI-compatible** | Format API yang meniru OpenAI (`/chat/completions`), dipakai banyak penyedia |
+| **OpenSSH Server** | Fitur opsional Windows yang harus diaktifkan agar PC bisa dimasuki lewat SSH |
+| **Orkestrator** | Komponen yang membagi tujuan menjadi subtugas dan mengoordinasikan beberapa agen |
+| **Overfitting** | Model menghafal data latih sehingga buruk pada data baru |
+| **Penyedia (provider)** | Layanan yang menjalankan model dan melayani API |
+| **Plugin (Claude Code)** | Paket yang menggabungkan skill, hook, dan MCP; jalan lokal, beda dengan skill ZIP di claude.ai |
 | **PolyForm Noncommercial** | Lisensi source-available: gratis untuk pribadi/riset, komersial butuh lisensi; bukan sumber terbuka menurut OSI |
+| **Prompt injection** | Instruksi tersembunyi di isi halaman/dokumen yang mencoba mengarahkan model |
+| **Pull request (PR)** | Usulan perubahan kode di GitHub yang bisa ditinjau sebelum digabung |
+| **QLoRA** | LoRA di atas model berkuantisasi 4-bit agar muat di GPU kecil |
+| **RAG** | Retrieval-Augmented Generation: potongan dokumen relevan dicari lalu dikirim ke model bersama pertanyaan |
+| **Rate limit / 429** | Batas jumlah permintaan; 429 berarti batas terlewati |
+| **Reasoning effort** | Seberapa dalam model berpikir (low/medium/high) |
+| **Relay / reseller API** | Layanan perantara yang menjual akses API model, sering dengan harga jauh di bawah resmi |
+| **Remote tool endpoint / execution backend** | Tempat alat agen dijalankan (mis. PC lewat SSH), terpisah dari tempat agen berpikir (VPS) |
+| **Round-robin** | Bergiliran memakai beberapa key/penyedia |
+| **Row Level Security (RLS)** | Aturan keamanan database (Supabase/PostgreSQL) yang membatasi baris data yang boleh diakses tiap pengguna |
+| **Self-hosted** | Dijalankan di perangkat/server milik sendiri |
+| **Service tier** | Kompromi biaya dan kecepatan pemrosesan (standard/flex/fast) |
+| **SFT** | Supervised fine-tuning: latihan dengan pasangan prompt dan jawaban |
+| **Skill** | Instruksi tersimpan untuk tugas tertentu ("kartu resep"); connector memberi akses, skill menjelaskan caranya |
+| **SSH / kunci SSH** | Protokol masuk ke command line komputer lain secara terenkripsi; kunci publik di tujuan, kunci privat di klien |
+| **Streaming** | Jawaban muncul bertahap, bukan sekaligus |
+| **Streaming palsu** | Jawaban ditunggu penuh lalu dipotong-potong seolah mengalir bertahap |
+| **Supabase** | Layanan backend (database PostgreSQL, autentikasi, penyimpanan) yang jadi pilihan bawaan banyak stack vibe coding |
+| **Tailscale / tailnet** | VPN mesh berbasis WireGuard yang menyambung perangkatmu seolah satu LAN privat (tailnet), tanpa port forwarding atau IP publik |
+| **Token** | Satuan potongan teks yang dihitung untuk kuota dan biaya |
+| **Tool calling / function calling** | Kemampuan model meminta pemanggilan alat dalam format terstruktur |
+| **Unified Gateway** | Opsi di Code Mate yang mengarahkan CLI lewat gateway Cherry Studio agar bisa memakai model apa pun yang sudah diatur |
+| **Unified key (freellmapi)** | Kunci lokal `freellmapi-…` buatan router-mu sendiri; bukan key dari penyedia atau dari situs freellmapi |
+| **URL fetch provider** | Penyedia yang mengambil isi satu halaman web (Jina, Firecrawl, Crawl4AI), terpisah dari penyedia yang mencari |
+| **Vault (Obsidian)** | Folder berisi file Markdown yang dikelola aplikasi Obsidian; bisa dibaca dan ditulis agen |
+| **Vibe coding** | Membuat perangkat lunak dengan mendeskripsikan keinginan ke AI |
+| **Virtual Quota Fallback** | Fitur Kilo Code yang berpindah otomatis antar-profil penyedia saat batas kuota terlewati atau terjadi error |
+| **VPS / VM** | Komputer virtual di cloud |
+| **VRAM** | Memori GPU; menentukan ukuran model yang muat dijalankan atau dilatih |
+| **Zen / Go (OpenCode)** | Layanan opsional milik OpenCode: gateway bayar-per-pemakaian (Zen) dan langganan model open-weight (Go) |
 
 ---
 
@@ -2158,12 +2264,14 @@ Dikumpulkan agar tidak dianggap fakta:
 - OpenBot: kebijakan tiap paket langganan soal pemakaian otomatis/multi-agen, detail fallback model cadangan, dan produk lain di halaman perbandingannya (halaman ditulis OpenBot sendiri).
 - Hermes di VPS + PC sebagai tangan: plugin `windows_control` tidak ditemukan; cara persis mengatur SSH execution backend di Hermes, apakah alat file ikut berjalan di PC, dan kontrol GUI lewat SSH di Windows.
 - Tailscale: batas paket gratis berbeda antar sumber (perubahan harga April 2026); langkah OpenSSH Server di Windows berasal dari pengetahuan umum.
+- AI Agent vs Agentic AI: taksonomi berasal dari satu makalah (2025) dan belum menjadi standar industri; pemakaian istilah bervariasi antar penulis.
+- Fine-tuning: peringkat alat berasal dari blog dan buletin (sebagian klaim pembuat alat); tidak ada evaluasi independen khusus Unsloth Studio (Beta); angka waktu latih berasal dari blog penyedia GPU dengan kondisi uji tidak jelas; kebutuhan VRAM dan jumlah contoh data adalah pedoman umum.
 
 ---
 
 ## 15. Tanya-Jawab Cepat
 
-*Pertanyaan diberi nomor berurut (1 sampai 47) agar mudah dirujuk.*
+*Pertanyaan diberi nomor berurut (1 sampai 50) agar mudah dirujuk.*
 
 **1. Bagaimana memakai semua model dalam satu tempat?**
 Pakai klien chat (Cherry Studio di PC, Chatbox/RikkaHub di HP) dengan penyedia Gemini dan satu penyedia OpenAI-compatible untuk geraikita. Tambahkan gateway bila ingin fallback.
@@ -2306,6 +2414,15 @@ Otak (agen, chat, memori) di VPS yang selalu menyala; PC jadi "tangan" tempat pe
 **47. Apa itu Tailscale dan SSH?**
 Tailscale: jaringan privat virtual yang menyambung perangkatmu tanpa membuka port. SSH: cara masuk dan menjalankan perintah di komputer lain secara terenkripsi, lebih aman dengan kunci SSH (lihat 5.10).
 
+**48. Apa beda AI Agent dan Agentic AI?**
+AI Agent = satu entitas otonom dengan alat untuk tugas tertentu; Agentic AI (menurut taksonomi akademik) = sistem banyak agen yang dikoordinasikan orkestrator dengan memori bersama. Batas istilahnya tidak baku (lihat 5.11).
+
+**49. Apa itu fine-tuning?**
+Melanjutkan pelatihan model jadi dengan dataset sendiri (lazimnya LoRA atau QLoRA) agar sesuai gaya, format, atau bidang tertentu. Coba prompt dan RAG dulu (lihat 2.14).
+
+**50. Apakah Unsloth Studio yang direkomendasikan untuk fine-tuning?**
+Tidak mutlak. Unsloth (pustaka) unggul di efisiensi satu GPU; LLaMA-Factory lebih ramah untuk pemula dengan antarmuka web; TRL untuk penyelarasan; Axolotl untuk produksi. Unsloth Studio masih Beta dan belum ada evaluasi independen khususnya (lihat 2.14).
+
 ---
 
 ## 16. Sumber Rujukan
@@ -2356,6 +2473,8 @@ Tautan yang muncul dalam hasil pencarian selama percakapan (cek versi terbarunya
 - Perbandingan Hermes dan OpenClaw: https://screenshotone.com/blog/hermes-agent-versus-openclaw/ dan https://www.mindstudio.ai/blog/hermes-agent-vs-openclaw-self-hosted-ai-agent-comparison
 - Hermes jarak jauh (Tailscale, SSH, desktop): https://jc-aiwiki.pages.dev/hermes-agent/hermes-remote-access-tailscale-termius-tmux, https://github.com/capthvnsen/alans-way/wiki, https://www.billerickson.net/?p=8700, https://github.com/NousResearch/hermes-agent/issues/38873
 - Tailscale: https://tailscale.com/plans/, https://tailscale.com/pricing-v2/, https://selfhostedworld.com/guides/what-is-tailscale
+- AI Agent vs Agentic AI: https://arxiv.org/pdf/2505.10468 dan https://www.ory.com/blog/ai-agents-vs-agentic-ai
+- Alat fine-tuning: https://techsy.io/blog/best-llm-fine-tuning-tools, https://buttondown.com/ultradune/archive/eval-003-fine-tuning-in-2026-axolotl-vs-unsloth, https://www.spheron.network/blog/axolotl-vs-unsloth-vs-torchtune/, https://www.index.dev/skill-vs-skill/ai-axolotl-vs-llama-factory-vs-unsloth
 
 ---
 
